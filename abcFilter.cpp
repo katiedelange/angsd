@@ -394,16 +394,20 @@ void abcFilter::run(funkyPars *p){
   }
 
   if(fl!=NULL) {
+
+    // Need to actually populate fl->keeps from the -sites file.
+    readSites(p->refId);
+
     for(int s=0;s<p->numSites;s++){
 
       if(fl->keeps[p->posi[s]]==0){
-	//	fprintf(stderr,"Plugging inf vals std\n");
-	p->keepSites[s] =0;
+      	//	fprintf(stderr,"Plugging inf vals std\n");
+      	p->keepSites[s] =0;
       }
       if(p->keepSites[s] && fl->hasMajMin==4){
-	//fprintf(stderr,"Plugging inf vals std majorminor\n");
-	p->major[s] = fl->major[p->posi[s]];
-	p->minor[s] = fl->minor[p->posi[s]];
+      	//fprintf(stderr,"Plugging inf vals std majorminor\n");
+      	p->major[s] = fl->major[p->posi[s]];
+      	p->minor[s] = fl->minor[p->posi[s]];
       }
     }
   }

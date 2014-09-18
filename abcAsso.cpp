@@ -1116,16 +1116,19 @@ void abcAsso::printDoAsso(funkyPars *pars){
     bufstr.l=0;
     for(int s=0;s<pars->numSites;s++){
       if(pars->keepSites[s]==0){//will skip sites that have been removed      
-	continue;
+        continue;
      } 
       if(doAsso==2){
-	ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s]);
-
+        ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s]);
       }else{
-	ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->stat[yi][s]);
-
+        ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->stat[yi][s]);
       }
     }
-    gzwrite(MultiOutfile[yi],bufstr.s,bufstr.l);
+    // gzwrite does not handle 0-sized writes very well (it messes up the checksum, and then the
+    // resulting file appears corrupted to gzip, zcat etc). If -sites is being used we may encounter
+    // an empty buffer: make sure none of these are passed to gzwrite.
+    if(bufstr.s != NULL){
+      gzwrite(MultiOutfile[yi],bufstr.s,bufstr.l);
+    }
   }
 }
