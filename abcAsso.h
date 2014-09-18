@@ -9,6 +9,7 @@ typedef struct{
   int *highHo;
   double *rvs_LRT;  
   double *std_LRT;
+  double *burden;
 
 }assoStruct;
 
@@ -55,5 +56,6 @@ public:
   double normScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
   double binomScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
   double binomRVScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
+  double** binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc);  
   void printDoAsso(funkyPars *pars);
 };

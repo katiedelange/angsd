@@ -27,6 +27,7 @@ void abcAsso::printArg(FILE *argFile){
   fprintf(argFile,"\t2: Score Test\n");
   fprintf(argFile,"\t3: Frequency Test (Unknown Minor)\t\n");
   fprintf(argFile,"\t4: Robust Variance Score Test\t\n");  
+  fprintf(argFile,"\t5: Robust Variance Score Burden Test (for rare variants)\t\n");    
   fprintf(argFile,"  Frequency Test Options:\n");
   fprintf(argFile,"\t-yBin\t\t%s\t(File containing disease status)\t\n\n",yfile);
   fprintf(argFile,"  Score Test Options:\n");
@@ -239,6 +240,8 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
       gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tN\tLRT\thigh_WT/HE/HO\n");
     else if(doAsso==4)
       gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tN\tLRT_filtered\tLRT_rvs\tLRT_std\thigh_WT/HE/HO\n");
+    else if(doAsso==5)
+      gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tLRT_rvs\tCAST\thigh_WT/HE/HO\n");
     else
       gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tLRT\n");
   }
@@ -279,7 +282,8 @@ void abcAsso::clean(funkyPars *pars){
   delete[]  assoc->highHe;
   delete[]  assoc->highHo;
   delete[]  assoc->std_LRT;
-  delete[]  assoc->rvs_LRT;  
+  delete[]  assoc->rvs_LRT;
+  delete[]  assoc->burden;
 
   if(assoc->keepInd!=NULL)
     for( int yi =0;yi<ymat.y;yi++)
@@ -311,6 +315,7 @@ assoStruct *allocAssoStruct(){
   assoc->highHo = NULL;
   assoc->std_LRT = NULL;
   assoc->rvs_LRT = NULL;
+  assoc->burden = NULL;
 
   return assoc;
 }
@@ -328,12 +333,13 @@ void abcAsso::run(funkyPars *pars){
   if(doAsso==1||doAsso==3){
     frequencyAsso(pars,assoc);
   }
-  else if(doAsso==2 || doAsso==4){
+  else if(doAsso==2 || doAsso==4 || doAsso==5){
     assoc->highWt=new int[pars->numSites];
     assoc->highHe=new int[pars->numSites];
     assoc->highHo=new int[pars->numSites];
     assoc->std_LRT=new double[pars->numSites];
     assoc->rvs_LRT=new double[pars->numSites];
+    assoc->burden=new double[ymat.y];
 
     scoreAsso(pars,assoc);
   }
@@ -479,49 +485,54 @@ void abcAsso::scoreAsso(funkyPars  *pars,assoStruct *assoc){
     keepInd[yi]= new int[pars->numSites];
   }
   
-  for(int s=0;s<pars->numSites;s++){//loop overs sites
-    if(pars->keepSites[s]==0)
-      continue;
-    
-    
-    int *keepListAll = new int[pars->nInd];
-    for(int i=0 ; i<pars->nInd ;i++){
-      keepListAll[i]=1;
-
-    }
-
-    for(int yi=0;yi<ymat.y;yi++) { //loop over phenotypes
-      int *keepList = new int[pars->nInd];
-      keepInd[yi][s]=0;
-      for(int i=0 ; i<pars->nInd ;i++) {
-	keepList[i]=1;
-	if(keepListAll[i]==0||ymat.matrix[i][yi]==-999)
-	  keepList[i]=0;
-	if(covfile!=NULL)
-	  for(int ci=0;ci<covmat.y;ci++) {
-	    if(covmat.matrix[i][ci]==-999)
-	      keepList[i]=0;
-	  }
-
-
-	if(keepList[i]==1)
-	  keepInd[yi][s]++;
-      }  
-      double *y = new double[pars->nInd];
-      for(int i=0 ; i<pars->nInd ;i++)
-	y[i]=ymat.matrix[i][yi]; 
- 
-      freqStruct *freq = (freqStruct *) pars->extras[6];
-      stat[yi][s]=doAssociation(pars,pars->post[s],y,keepInd[yi][s],keepList,freq->freq[s],s,assoc);
+  if(doAsso == 5){
+    stat = binomRVScoreEnvRare(pars,assoc);
+  }
+  else{
+    for(int s=0;s<pars->numSites;s++){//loop overs sites
+      if(pars->keepSites[s]==0)
+        continue;
       
-      //cleanup
-       delete [] y;
-      delete [] keepList;
+      
+      int *keepListAll = new int[pars->nInd];
+      for(int i=0 ; i<pars->nInd ;i++){
+        keepListAll[i]=1;
 
-    } //phenotypes end
- 
-    delete [] keepListAll;
-  } // sites end
+      }
+
+      for(int yi=0;yi<ymat.y;yi++) { //loop over phenotypes
+        int *keepList = new int[pars->nInd];
+        keepInd[yi][s]=0;
+        for(int i=0 ; i<pars->nInd ;i++) {
+  	keepList[i]=1;
+  	if(keepListAll[i]==0||ymat.matrix[i][yi]==-999)
+  	  keepList[i]=0;
+  	if(covfile!=NULL)
+  	  for(int ci=0;ci<covmat.y;ci++) {
+  	    if(covmat.matrix[i][ci]==-999)
+  	      keepList[i]=0;
+  	  }
+
+
+  	if(keepList[i]==1)
+  	  keepInd[yi][s]++;
+        }  
+        double *y = new double[pars->nInd];
+        for(int i=0 ; i<pars->nInd ;i++)
+  	y[i]=ymat.matrix[i][yi]; 
+   
+        freqStruct *freq = (freqStruct *) pars->extras[6];
+        stat[yi][s]=doAssociation(pars,pars->post[s],y,keepInd[yi][s],keepList,freq->freq[s],s,assoc);
+        
+        //cleanup
+         delete [] y;
+        delete [] keepList;
+
+      } //phenotypes end
+   
+      delete [] keepListAll;
+    } // sites end
+  }
 
   assoc->stat=stat;
   assoc->keepInd=keepInd;
@@ -1240,6 +1251,254 @@ double abcAsso::binomRVScoreEnv(double *post,int numInds, double *y, double *yti
   return lrt_RVS;
 }
 
+// This method implements the Robust Variance Score statistic for rare variants, as
+// described by Derkach et al (2014). DOI: 10.1093/bioinformatics/btu196
+// Takes as input the posterior genotype probabilities (post), phenotypes (y), and MAF (freq)
+// for a series of rare variants, and returns a p-value representing the result
+// of a CAST burden test for association over all the variants at once.
+// NOTE: if the number of rare variants to be included exceeds 50, then it will be
+// necessary to increase the chunk size using -nLines on the command line, so that
+// all variants are processed together.
+double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
+
+  // Store the individual score statistics for each variant, to help work out how much each
+  // variant may be contributing to the overall burden test.
+  double **stat = new double*[ymat.y];
+
+  // Repeat for each phenotype variable.
+  for(int yi=0;yi<ymat.y;yi++){
+
+    // Initialise the stat array for this phenotype variable.
+    stat[yi] = new double[pars->numSites];
+
+    // Mark out individuals that will need to be skipped, generally due to missing phenotype.
+    // Covariate compatibility is not currently implemented, but if it it then it is also
+    // necessary to check for missing covariate data here.
+    double *excludeInd = new double[pars->nInd];
+    for(int i=0;i<pars->nInd;i++){
+      excludeInd[i]=0;
+      if(ymat.matrix[i][yi]==-999){
+        excludeInd[i]=1;
+      }
+      else if(covfile!=NULL){
+        for(int ci=0;ci<covmat.y;ci++) {
+          if(covmat.matrix[i][ci]==-999)
+            excludeInd[i]=1;
+        } 
+      } 
+    }
+
+    // Set up a phenotype array. Track the total number of cases and controls.
+    int n[2] = {0};
+    int *y = new int[pars->nInd];
+    for(int i=0 ; i<pars->nInd ;i++){
+      y[i]=(int)ymat.matrix[i][yi];
+      if(excludeInd[i] == 0){
+        n[y[i]]++;
+      }
+    }
+    // Store the total number of kept individuals.
+    int keep = n[0]+n[1];
+
+    // Extract the genotype likelihoods. If necessary, update them to reflect the model
+    // being used (Dominant, Recessive or Additive/Log-Additive).
+    double** post =new double*[pars->numSites];
+    for(int j=0;j<pars->numSites;j++){
+      post[j]=pars->post[j];
+      if(model > 1){
+        for(int i=0;i<pars->nInd;i++){
+          // Model 1 (DEFAULT) is Additive / Log-Additive
+          // Model 2 is Dominant
+          if(model==2){
+            post[j][i*3+1]+=post[j][i*3+2]; // Combine heterozygous and non-ref homozygous
+            post[j][i*3+2]=0;               // as both are contribute equally to phenotype.
+          }
+          // Model 3 is Recessive
+          if(model==3){
+              post[j][i*3+0]+=post[j][i*3+1]; // Combine heterozygous and ref homozygous.
+              post[j][i*3+1]=post[j][i*3+2];  // as both contribute equally to phentoype.
+              post[j][i*3+2]=0;               // Shuffle order for compatibility.
+          }
+        }
+      } 
+    }    
+
+    // TO DO: Extend this so the user can specify the number of bootstrap samples to generate.
+    // For now, default it to 1000.
+    int nPerm = 1000+1;
+
+    // Generate nPerm random subsets of cases and controls (with replacement). Sample cases
+    // and controls separately, maintaining the two distinct groups.
+    // Skip over any excludeInds.
+    int** sample = new int*[nPerm];
+    
+    // Set up the original sample first.
+    sample[0] = new int[keep];
+    int index = 0;
+    for(int i=0;i<pars->nInd;i++){
+      if(excludeInd[i] == 0){
+        sample[0][index] = i;
+        index++;
+      }
+    }
+
+    // Generate nPerm random samples (with replacement).
+    for(int s=1;s<=nPerm;s++){
+
+      // Create a new row in the samples matrix to store the new set of individual indices.
+      sample[s] = new int[keep];
+      
+      int cases = 0;
+      int controls = 0;
+      int index = 0;
+      while(controls < n[0] && cases < n[1]){
+        
+        // Sample a new individual.
+        int i = rand() % pars->nInd;
+
+        // Skip any marked for exclusion.
+        if(excludeInd[i] == 0){
+
+          // If it is a control, and we have not already met our control quota,
+          // add it to the list.
+          if(y[i] == 0 && controls < n[0]){
+            sample[s][index] = i;
+            index++;
+            controls++;          
+          }
+          // Otherwise, if it's a case and we haven't met the case quota,
+          // add it to the list.
+          else if(y[i] == 1 && cases < n[1]){
+            sample[s][index] = i;
+            index++;
+            cases++;          
+          }
+        }
+      }    
+    }
+
+    // Initialise results vectors to store the scoreSum and varSum for each permutation.
+    double* score =new double[nPerm];
+    double* var =new double[nPerm];
+    for(int s=0;s<nPerm;s++){
+      score[s] = 0;
+      var[s] = 0;
+    }
+
+    // Loop through each combination of sites. 
+    for(int j1=0;j1<pars->numSites;j1++){
+
+      // Skip any sites marked for removal.
+      if(pars->keepSites[j1]==0)
+        continue;
+
+      // Track the high-confidence heterozygosity and homozygosity rates for filtering.
+      int highHE=0;
+      int highHO=0;
+      int highWT=0;
+
+      // The variance-covariance matrix is symmetric, so we can
+      // save on processing time by only processing one half.
+      for(int j2=j1;j2<pars->numSites;j2++){ 
+
+        // Skip any sites already marked for removal.
+        if(pars->keepSites[j2]==0)
+          continue;
+
+        // For each bootstrapped sample:
+        for(int s=0;s<nPerm;s++){
+
+          double ytilde = 0;
+          double extilde[2][2] = {0};
+
+          // Determine the mean of the phenotypes and expected genotypes for this sample.
+          for(int i=0;i<keep;i++){
+            ytilde+=y[sample[s][i]];
+            extilde[0][y[sample[s][i]]]+=post[j1][sample[s][i]*3+1]+2*post[j1][sample[s][i]*3+2];
+            extilde[1][y[sample[s][i]]]+=post[j2][sample[s][i]*3+1]+2*post[j2][sample[s][i]*3+2];                
+          }
+          ytilde=ytilde/keep;
+          for(int i=0;i<2;i++){
+            for(int j=0;j<2;j++){
+              extilde[i][j]=extilde[i][j]/keep;
+            }
+          }
+
+          // Calculate the score and (co)variance values
+          double cov[2] = {0};
+          for(int i=0;i<keep;i++){
+
+            double ex1 = post[j1][sample[s][i]*3+1]+2*post[j1][sample[s][i]*3+2];
+            double ex2 = post[j2][sample[s][i]*3+1]+2*post[j2][sample[s][i]*3+2];
+
+            // If we are on the diagonal, update the score.
+            if(j1 == j2){
+              score[s]+= ex1*(y[sample[s][i]]-ytilde);
+
+              // For the original sample, also update the single site statistic,
+              // and track heterozygosity and homosygosity rates for filtering.
+              if(s==0){
+                stat[yi][j1]+=ex1*(y[sample[s][i]]-ytilde);
+                if(post[j1][sample[s][i]*3+0]>0.9)
+                  highWT++;
+                if(post[j1][sample[s][i]*3+1]>0.9)
+                  highHE++;
+                if(post[j1][sample[s][i]*3+2]>0.9)
+                  highHO++;
+              }
+            }
+
+            // Compute the (co)variance for the cases and controls separately.
+            cov[y[sample[s][i]]] += (ex1 - extilde[0][y[sample[s][i]]]) * (ex2 - extilde[1][y[sample[s][i]]]);
+          }
+
+          // Update the variance sum
+          double variance = n[1]*pow(((double)n[0]/(n[0]+n[1])),2)*cov[1] + n[0]*pow(((double)n[1]/(n[0]+n[1])),2)*cov[0];
+          var[s] += variance;
+
+          // Add the variance twice if we are not on a diagonal (because of the symmetrical matrix).
+          if(j1 != j2){
+            var[s] += variance;            
+          }
+          // If we are on the diagonal for the original sample, update the test statistic and 
+          // store the HE/HO/WT values.
+          else if(s==0){
+            stat[yi][j1]=pow(stat[yi][j1],2)/variance;
+            assoc->highWt[j1] = highWT;
+            assoc->highHe[j1] = highHE;
+            assoc->highHo[j1] = highHO;    
+          }
+        }
+      }
+    }
+
+    // Compute a CAST statistic for the original sample. Take the absolute value of the test statistic.
+    double baseline = score[0]/sqrt(var[0]);
+    if(baseline < 0)
+      baseline *= -1;
+
+    // Compute CAST statistics for each bootstrapped sample. If the absolute value of the test statistic
+    // for the bootstrap sample is greater than for the original sample, add 1 to the count.
+    int count = 0;
+    for(int s=1;s<=nPerm;s++){
+      double test = score[s]/sqrt(abs(var[s]));
+      if(test < 0)
+        test *= -1;
+      if(test>=baseline)
+        count++;
+    }
+
+    fprintf(stderr,"Count: %d\tnPerm: %d\tTest: %f\n",count,nPerm,(double)count/nPerm);
+
+    // Compute the final p value, as the proportion of bootstrap samples with an absolute test
+    // statistic greater than or equal to the original sample.
+    assoc->burden[yi] = (double)count/(nPerm-1);
+  }
+
+  // Return the individual LRT statistics.
+  return stat;
+}
+
 void abcAsso::printDoAsso(funkyPars *pars){
   if(doPrint)
     fprintf(stderr,"staring [%s]\t[%s]\n",__FILE__,__FUNCTION__);
@@ -1256,6 +1515,8 @@ void abcAsso::printDoAsso(funkyPars *pars){
         ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s]);
       }else if(doAsso==4){
         ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%f\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->rvs_LRT[s],assoc->std_LRT[s],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s]);
+      }else if(doAsso==5){
+        ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->stat[yi][s],assoc->burden[yi],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s]);
       }else{
         ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->stat[yi][s]);
       }
