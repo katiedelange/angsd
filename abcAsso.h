@@ -7,6 +7,9 @@ typedef struct{
   int *highHe;
   int *highWt;
   int *highHo;
+  double *rvs_LRT;  
+  double *std_LRT;
+
 }assoStruct;
 
 
@@ -51,5 +54,6 @@ public:
   void getFitBin(double *res,double *Y,double *covMatrix,int nInd,int nEnv);
   double normScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
   double binomScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
+  double binomRVScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
   void printDoAsso(funkyPars *pars);
 };

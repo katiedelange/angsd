@@ -26,6 +26,7 @@ void abcAsso::printArg(FILE *argFile){
   fprintf(argFile,"\t1: Frequency Test (Known Major and Minor)\n");
   fprintf(argFile,"\t2: Score Test\n");
   fprintf(argFile,"\t3: Frequency Test (Unknown Minor)\t\n");
+  fprintf(argFile,"\t4: Robust Variance Score Test\t\n");  
   fprintf(argFile,"  Frequency Test Options:\n");
   fprintf(argFile,"\t-yBin\t\t%s\t(File containing disease status)\t\n\n",yfile);
   fprintf(argFile,"  Score Test Options:\n");
@@ -236,6 +237,8 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
   for(int yi=0;yi<ymat.y;yi++){
     if(doAsso==2)
       gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tN\tLRT\thigh_WT/HE/HO\n");
+    else if(doAsso==4)
+      gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tN\tLRT_filtered\tLRT_rvs\tLRT_std\thigh_WT/HE/HO\n");
     else
       gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tLRT\n");
   }
@@ -275,7 +278,9 @@ void abcAsso::clean(funkyPars *pars){
   delete[]  assoc->highWt;
   delete[]  assoc->highHe;
   delete[]  assoc->highHo;
-  
+  delete[]  assoc->std_LRT;
+  delete[]  assoc->rvs_LRT;  
+
   if(assoc->keepInd!=NULL)
     for( int yi =0;yi<ymat.y;yi++)
       delete[] assoc->keepInd[yi];
@@ -304,7 +309,9 @@ assoStruct *allocAssoStruct(){
   assoc->highWt = NULL;
   assoc->highHe = NULL;
   assoc->highHo = NULL;
-  
+  assoc->std_LRT = NULL;
+  assoc->rvs_LRT = NULL;
+
   return assoc;
 }
 
@@ -321,10 +328,12 @@ void abcAsso::run(funkyPars *pars){
   if(doAsso==1||doAsso==3){
     frequencyAsso(pars,assoc);
   }
-  else if(doAsso==2){
+  else if(doAsso==2 || doAsso==4){
     assoc->highWt=new int[pars->numSites];
     assoc->highHe=new int[pars->numSites];
     assoc->highHo=new int[pars->numSites];
+    assoc->std_LRT=new double[pars->numSites];
+    assoc->rvs_LRT=new double[pars->numSites];
 
     scoreAsso(pars,assoc);
   }
@@ -824,7 +833,10 @@ double abcAsso::doAssociation(funkyPars *pars,double *postOrg,double *yOrg,int k
 
   double stat;
   if(isBinary)
-    stat = binomScoreEnv(post,keepInd,y,yfit,covMatrix,nEnv,freq,assoc,s);
+    if(doAsso==2)
+      stat = binomScoreEnv(post,keepInd,y,yfit,covMatrix,nEnv,freq,assoc,s);
+    else if(doAsso==4)
+      stat = binomRVScoreEnv(post,keepInd,y,yfit,covMatrix,nEnv,freq,assoc,s);
   else
     stat = normScoreEnv(post,keepInd,y,yfit,covMatrix,nEnv,freq,assoc,s);
 
@@ -1104,7 +1116,129 @@ double abcAsso::binomScoreEnv(double *post,int numInds, double *y, double *ytild
 
 
 
+// This method implements the Robust Variance Score statistic described by Derkach et al (2014)
+// DOI: 10.1093/bioinformatics/btu196
+// Takes as input the posterior genotype probabilities (post), phenotypes (y), and MAF (freq),
+// and returns a score statistic (chi-squared, 1df) for the association between phenotype and 
+// observed data (through the unobserved genotype variable).
+double abcAsso::binomRVScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s){
+  // For consistency with the rest of ANGSD.
+  if(doPrint)
+    fprintf(stderr,"staring [%s]\t[%s]\n",__FILE__,__FUNCTION__);
 
+  // Array to store the conditional expected genotypes, E(Gij|Dij), for each individual.
+  double *Ex = angsd::allocArray<double>(numInds,0);
+  
+  // Variable to hold the score.
+  double U=0;
+
+  // Keep track of the sum of E(Gij|Dij), for use when calculating the variance.
+  // Seperately track the cases, controls, and combined values.
+  double sumEx[3] = {0};
+
+  // Track the high-confidence heterozygosity and homozygosity rates for filtering.
+  int highHE=0;
+  int highHO=0;
+  int highWT=0;
+
+  // Loop through each individual, retrieving E(Gij|Dij) and using it
+  // to update the score statistic.
+  for(int i=0 ; i<numInds ;i++) {
+    
+    // E(Gij|Dij), calculated as ∑gP(Gij=g|Dij), for g=0,1,2.
+    Ex[i]=post[i*3+1]+2*post[i*3+2];
+
+    // Score statistic. Y(i) represents the phenotype for this
+    // individual, and Ytilde stores the mean (Ncase/N).
+    U+=Ex[i]*(y[i]-ytilde[i]);
+
+    // Sum E(Gij|Dij), both separately for cases and controls, and
+    // in one overall term.
+    sumEx[(int)y[i]]+=Ex[i];
+    sumEx[2]+=Ex[i];
+
+    // Track heterozygosity and homosygosity rates for filtering.
+    if(post[i*3+0]>0.9)
+      highWT++;
+    if(post[i*3+1]>0.9)
+      highHE++;
+    if(post[i*3+2]>0.9)
+      highHO++;
+  }
+
+  // Store the highHe and highHo rates in the assoc struct, so they can be printed later.
+  assoc->highWt[s] = highWT;
+  assoc->highHe[s] = highHE;
+  assoc->highHo[s] = highHO;
+
+  // Determine how many cases and controls there are.
+  double ncase = ytilde[0]*numInds;
+  double ncont = numInds - ncase;
+
+  // Calculate the mean E(Gij|Dij) for the different groups (cases, controls, combined).
+  double Extilde[3];
+  Extilde[0] = sumEx[0]/ncont;
+  Extilde[1] = sumEx[1]/ncase;
+  Extilde[2] = sumEx[2]/numInds;
+
+  // Array to hold the variance of E(Gij|Dij) for the different groups.
+  double var[3] = {0};
+
+  // Calculate Var[E(Gij|Dij)], [∑(Ex - Emean)^2]/N.
+  for(int i =0; i<numInds;i++){
+    // Update the case or control variance as appropriate.
+    var[(int)y[i]]+=pow((Ex[i]-Extilde[(int)y[i]]),2);
+    // Update the combined variance.
+    var[2]+=pow((Ex[i]-Extilde[2]),2);
+  }
+  var[0]=var[0]/ncont;
+  var[1]=var[1]/ncase;
+  var[2]=var[2]/numInds;
+
+  // Calculate the variance of the score, in order to construct the full test statistic.
+    // STANDARD VARIANCE -> Var(S) = ∑cases[(1-Ybar)^2]Var(E(Gij|Dij)) + 
+    //                               ∑controls[(Ybar)^2]Var(E(Gij|Dij))
+    double I = ncase*pow((ncont/numInds),2)*var[2] + ncont*pow(ncase/numInds,2)*var[2];
+
+    // ROBUST VARIANCE -> Var(S) = Ncase[(Ncontrol/N)^2]Var_case(E(Gij|Dij)) + 
+    //                             Ncontrol[(Ncase/N)^2]Var_control(E(Gij|Dij))
+    double I_RVS = ncase*pow((ncont/numInds),2)*var[1] + ncont*pow(ncase/numInds,2)*var[0];
+
+  // Calculate the test statistic, Tj=(Sj^2)/var(Sj).
+  double lrt =pow(U,2)/I;
+  double lrt_RVS =pow(U,2)/I_RVS;
+
+  // Keep track of the standard score statistic, to print later for testing/comparison.
+  assoc->std_LRT[s] = lrt;
+  assoc->rvs_LRT[s] = lrt_RVS;
+
+  // If the MAF was too low, filter out this site.
+  if(freq*numInds*2 < minCount || (1-freq)*numInds*2 < minCount){
+    lrt_RVS=-999;
+  }
+
+  // If the number of confident heterozygous and homozygous calls is too small, filter out this site.
+  int nGeno=0;
+  if(highWT >= minHigh)
+    nGeno++;
+  if(highHE >= minHigh)
+    nGeno++;
+  if(highHO >= minHigh)
+    nGeno++;
+  if(nGeno<2)
+    lrt_RVS=-999;
+
+  // If the score statistic looks otherwise problematic, print out a warning to the user.
+  if((lrt_RVS>1000||I<-0.01||lrt_RVS<0)&&lrt_RVS!=-999){
+    fprintf(stderr,"WARNING - lrt: %f\tI: %f\tU %f\n",lrt_RVS,I_RVS,U);
+  }
+
+  // Tidy up the arrays.
+  delete [] Ex;
+
+  // Return the RVS lrt score 
+  return lrt_RVS;
+}
 
 void abcAsso::printDoAsso(funkyPars *pars){
   if(doPrint)
@@ -1120,6 +1254,8 @@ void abcAsso::printDoAsso(funkyPars *pars){
      } 
       if(doAsso==2){
         ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s]);
+      }else if(doAsso==4){
+        ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%f\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->rvs_LRT[s],assoc->std_LRT[s],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s]);
       }else{
         ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->stat[yi][s]);
       }
