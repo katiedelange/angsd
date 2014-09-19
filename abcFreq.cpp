@@ -81,6 +81,7 @@ void abcFreq::printArg(FILE *argFile){
   fprintf(argFile,"\t2: Using uniform prior\n");
   fprintf(argFile,"Filters:\n");
   fprintf(argFile,"\t-minMaf  \t%f\t(Remove sites with MAF below)\n",minMaf);
+  fprintf(argFile,"\t-maxMaf  \t%f\t(Remove sites with MAF above)\n",maxMaf);  
   fprintf(argFile,"\t-SNP_pval\t%f\t(Remove sites with a pvalue larger)\n",SNP_pval);
   fprintf(argFile,"Extras:\n");
   fprintf(argFile,"\t-ref\t%s\t(Filename for fasta reference)\n",refName);
@@ -139,6 +140,7 @@ void abcFreq::getOptions(argStruct *arguments){
 
   minMaf=angsd::getArg("-minMaf",minMaf,arguments);
   //  assert(minMaf<=1&&minMaf>=0);
+  maxMaf=angsd::getArg("-maxMaf",maxMaf,arguments);
 
   double tmp=-1;
   tmp=angsd::getArg("-SNP_pval",tmp,arguments);
@@ -178,6 +180,10 @@ void abcFreq::getOptions(argStruct *arguments){
   }
   if(minMaf>0.0 &&(abs(doMaf)==0)){
     fprintf(stderr,"\nYou've selected minMaf but no MAF estimator, choose -doMaf\n\n");
+    exit(0);
+  }
+  if(maxMaf>0.0 &&(abs(doMaf)==0)){
+    fprintf(stderr,"\nYou've selected maxMaf but no MAF estimator, choose -doMaf\n\n");
     exit(0);
   }
 
@@ -237,6 +243,7 @@ abcFreq::abcFreq(const char *outfiles,argStruct *arguments,int inputtype){
   inputIsBeagle =0;
   beagleProb = 0; //<-output for beagleprobs
   minMaf =-1.0;
+  maxMaf = 1.0;
   SNP_pval = 1;
   nInd = arguments->nInd;
   eps = 0.001;
@@ -528,6 +535,11 @@ void abcFreq::run(funkyPars *pars) {
 	pars->keepSites[s]=0;
       else if(freq->freq[s] > 1 - minMaf)
 	pars->keepSites[s]=0;
+
+      if(freq->freq[s] > maxMaf)
+        pars->keepSites[s]=0;
+      else if((1-freq->freq[s])<freq->freq[s] && (1-freq->freq[s]) > maxMaf)
+        pars->keepSites[s]=0;
      
       if(doSNP&&(freq->lrt[s] < SNP_pval))
       	pars->keepSites[s]=0;
