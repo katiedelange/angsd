@@ -4,9 +4,9 @@ typedef struct{
 
   double **stat;
   int **keepInd;
-  int *highHe;
-  int *highWt;
-  int *highHo;
+  int **highHe;
+  int **highWt;
+  int **highHo;
   double *rvs_LRT;  
   double *std_LRT;
   double *burden;

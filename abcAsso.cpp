@@ -11,6 +11,7 @@
 */
 #include <cmath>
 #include <zlib.h>
+#include <time.h> 
 #include "kstring.h"
 #include "shared.h"
 #include "analysisFunction.h"
@@ -241,7 +242,7 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
     else if(doAsso==4)
       gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tN\tLRT_filtered\tLRT_rvs\tLRT_std\thigh_WT/HE/HO\n");
     else if(doAsso==5)
-      gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tLRT_rvs\tCAST\thigh_WT/HE/HO\n");
+      gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tLRT_rvs\tCAST\tCONT_high_WT/HE/HO\tCASE_high_WT/HE/HO\n");
     else
       gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tLRT\n");
   }
@@ -278,9 +279,12 @@ void abcAsso::clean(funkyPars *pars){
 
   delete[] assoc->stat;
   
-  delete[]  assoc->highWt;
-  delete[]  assoc->highHe;
-  delete[]  assoc->highHo;
+  delete[]  assoc->highWt[0];
+  delete[]  assoc->highHe[0];
+  delete[]  assoc->highHo[0];
+  delete[]  assoc->highWt[1];
+  delete[]  assoc->highHe[1];
+  delete[]  assoc->highHo[1];  
   delete[]  assoc->std_LRT;
   delete[]  assoc->rvs_LRT;
   delete[]  assoc->burden;
@@ -334,9 +338,16 @@ void abcAsso::run(funkyPars *pars){
     frequencyAsso(pars,assoc);
   }
   else if(doAsso==2 || doAsso==4 || doAsso==5){
-    assoc->highWt=new int[pars->numSites];
-    assoc->highHe=new int[pars->numSites];
-    assoc->highHo=new int[pars->numSites];
+ 
+    assoc->highWt=new int*[2];
+    assoc->highHe=new int*[2];
+    assoc->highHo=new int*[2];
+    for(int i=0;i<=1;i++){
+      assoc->highWt[i]=new int[pars->numSites];
+      assoc->highHe[i]=new int[pars->numSites];
+      assoc->highHo[i]=new int[pars->numSites];     
+    }
+
     assoc->std_LRT=new double[pars->numSites];
     assoc->rvs_LRT=new double[pars->numSites];
     assoc->burden=new double[ymat.y];
@@ -910,9 +921,9 @@ double abcAsso::normScoreEnv(double *post,int numInds, double *y, double *ytilde
       highHO++;
   }//recursion done
   
-  assoc->highWt[s] = highWT;
-  assoc->highHe[s] = highHE;
-  assoc->highHo[s] = highHO;
+  assoc->highWt[0][s] = highWT;
+  assoc->highHe[0][s] = highHE;
+  assoc->highHo[0][s] = highHO;
   
   for(int i =0; i<numInds;i++)
     sumEx+=Ex[i];
@@ -1063,9 +1074,9 @@ double abcAsso::binomScoreEnv(double *post,int numInds, double *y, double *ytild
     if(post[i*3+2]>0.9)
       highHO++;
   }//recursion done
-  assoc->highWt[s] = highWT;
-  assoc->highHe[s] = highHE;
-  assoc->highHo[s] = highHO;
+  assoc->highWt[0][s] = highWT;
+  assoc->highHe[0][s] = highHE;
+  assoc->highHo[0][s] = highHO;
  
 
     for(int i =0; i<numInds;i++)
@@ -1178,9 +1189,9 @@ double abcAsso::binomRVScoreEnv(double *post,int numInds, double *y, double *yti
   }
 
   // Store the highHe and highHo rates in the assoc struct, so they can be printed later.
-  assoc->highWt[s] = highWT;
-  assoc->highHe[s] = highHE;
-  assoc->highHo[s] = highHO;
+  assoc->highWt[0][s] = highWT;
+  assoc->highHe[0][s] = highHE;
+  assoc->highHo[0][s] = highHO;
 
   // Determine how many cases and controls there are.
   double ncase = ytilde[0]*numInds;
@@ -1261,6 +1272,9 @@ double abcAsso::binomRVScoreEnv(double *post,int numInds, double *y, double *yti
 // all variants are processed together.
 double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
 
+  // Seed the random number generator.
+  srand (time(NULL));
+
   // Store the individual score statistics for each variant, to help work out how much each
   // variant may be contributing to the overall burden test.
   double **stat = new double*[ymat.y];
@@ -1272,7 +1286,7 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
     stat[yi] = new double[pars->numSites];
 
     // Mark out individuals that will need to be skipped, generally due to missing phenotype.
-    // Covariate compatibility is not currently implemented, but if it it then it is also
+    // Covariate compatibility is not currently implemented, but if it is then it is also
     // necessary to check for missing covariate data here.
     double *excludeInd = new double[pars->nInd];
     for(int i=0;i<pars->nInd;i++){
@@ -1350,8 +1364,8 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
       
       int cases = 0;
       int controls = 0;
-      int index = 0;
-      while(controls < n[0] && cases < n[1]){
+      index = 0;
+      while(controls < n[0] || cases < n[1]){
         
         // Sample a new individual.
         int i = rand() % pars->nInd;
@@ -1374,7 +1388,7 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
             cases++;          
           }
         }
-      }    
+      }
     }
 
     // Initialise results vectors to store the scoreSum and varSum for each permutation.
@@ -1393,9 +1407,9 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
         continue;
 
       // Track the high-confidence heterozygosity and homozygosity rates for filtering.
-      int highHE=0;
-      int highHO=0;
-      int highWT=0;
+      int highHE[2]={0};
+      int highHO[2]={0};
+      int highWT[2]={0};
 
       // The variance-covariance matrix is symmetric, so we can
       // save on processing time by only processing one half.
@@ -1420,7 +1434,7 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
           ytilde=ytilde/keep;
           for(int i=0;i<2;i++){
             for(int j=0;j<2;j++){
-              extilde[i][j]=extilde[i][j]/keep;
+              extilde[i][j]=extilde[i][j]/n[j];
             }
           }
 
@@ -1436,15 +1450,15 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
               score[s]+= ex1*(y[sample[s][i]]-ytilde);
 
               // For the original sample, also update the single site statistic,
-              // and track heterozygosity and homosygosity rates for filtering.
+              // and track heterozygosity and homozygosity rates for filtering.
               if(s==0){
                 stat[yi][j1]+=ex1*(y[sample[s][i]]-ytilde);
                 if(post[j1][sample[s][i]*3+0]>0.9)
-                  highWT++;
+                  highWT[y[sample[s][i]]]++;
                 if(post[j1][sample[s][i]*3+1]>0.9)
-                  highHE++;
+                  highHE[y[sample[s][i]]]++;
                 if(post[j1][sample[s][i]*3+2]>0.9)
-                  highHO++;
+                  highHO[y[sample[s][i]]]++;
               }
             }
 
@@ -1453,7 +1467,7 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
           }
 
           // Update the variance sum
-          double variance = n[1]*pow(((double)n[0]/(n[0]+n[1])),2)*cov[1] + n[0]*pow(((double)n[1]/(n[0]+n[1])),2)*cov[0];
+          double variance = pow(((double)n[0]/(n[0]+n[1])),2)*cov[1] + pow(((double)n[1]/(n[0]+n[1])),2)*cov[0];          
           var[s] += variance;
 
           // Add the variance twice if we are not on a diagonal (because of the symmetrical matrix).
@@ -1464,9 +1478,12 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
           // store the HE/HO/WT values.
           else if(s==0){
             stat[yi][j1]=pow(stat[yi][j1],2)/variance;
-            assoc->highWt[j1] = highWT;
-            assoc->highHe[j1] = highHE;
-            assoc->highHo[j1] = highHO;    
+            assoc->highWt[0][j1] = highWT[0];
+            assoc->highHe[0][j1] = highHE[0];
+            assoc->highHo[0][j1] = highHO[0];
+            assoc->highWt[1][j1] = highWT[1];
+            assoc->highHe[1][j1] = highHE[1];
+            assoc->highHo[1][j1] = highHO[1];                
           }
         }
       }
@@ -1481,14 +1498,12 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
     // for the bootstrap sample is greater than for the original sample, add 1 to the count.
     int count = 0;
     for(int s=1;s<=nPerm;s++){
-      double test = score[s]/sqrt(abs(var[s]));
+      double test = score[s]/sqrt(var[s]);
       if(test < 0)
         test *= -1;
       if(test>=baseline)
         count++;
     }
-
-    fprintf(stderr,"Count: %d\tnPerm: %d\tTest: %f\n",count,nPerm,(double)count/nPerm);
 
     // Compute the final p value, as the proportion of bootstrap samples with an absolute test
     // statistic greater than or equal to the original sample.
@@ -1512,11 +1527,11 @@ void abcAsso::printDoAsso(funkyPars *pars){
         continue;
      } 
       if(doAsso==2){
-        ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s]);
+        ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[0][s],assoc->highHe[0][s],assoc->highHo[0][s]);
       }else if(doAsso==4){
-        ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%f\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->rvs_LRT[s],assoc->std_LRT[s],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s]);
+        ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%f\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->rvs_LRT[s],assoc->std_LRT[s],assoc->highWt[0][s],assoc->highHe[0][s],assoc->highHo[0][s]);
       }else if(doAsso==5){
-        ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->stat[yi][s],assoc->burden[yi],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s]);
+        ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t%d/%d/%d\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->stat[yi][s],assoc->burden[yi],assoc->highWt[0][s],assoc->highHe[0][s],assoc->highHo[0][s],assoc->highWt[1][s],assoc->highHe[1][s],assoc->highHo[1][s]);
       }else{
         ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->stat[yi][s]);
       }
