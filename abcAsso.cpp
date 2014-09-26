@@ -1317,6 +1317,7 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
     // Extract the genotype likelihoods. If necessary, update them to reflect the model
     // being used (Dominant, Recessive or Additive/Log-Additive).
     double** post =new double*[pars->numSites];
+    double** mean =new double*[pars->numSites];
     for(int j=0;j<pars->numSites;j++){
       post[j]=pars->post[j];
       if(model > 1){
@@ -1334,8 +1335,22 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
               post[j][i*3+2]=0;               // Shuffle order for compatibility.
           }
         }
-      } 
-    }    
+      }
+
+      // Determine the mean expected genotype for each site: this will be used to center the
+      // values so bootstrapping can be applied. By centering cases and controls around their
+      // means, the groups will then only differ in variance and a significance test can
+      // be applied.
+      mean[j] = new double[2];
+      mean[j][0] = mean[j][1] = 0;
+      for(int i=0; i<pars->nInd;i++){
+        if(excludeInd[i]==0){
+          mean[j][y[i]]+=post[j][i*3+1]+2*post[j][i*3+2];
+        }
+      }
+      mean[j][0]=mean[j][0]/n[0];
+      mean[j][1]=mean[j][1]/n[1];
+    }
 
     // TO DO: Extend this so the user can specify the number of bootstrap samples to generate.
     // For now, default it to 1000.
@@ -1425,11 +1440,16 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
           double ytilde = 0;
           double extilde[2][2] = {0};
 
-          // Determine the mean of the phenotypes and expected genotypes for this sample.
+          // Determine the mean of the phenotypes and (centred) expected genotypes for this sample.
           for(int i=0;i<keep;i++){
             ytilde+=y[sample[s][i]];
-            extilde[0][y[sample[s][i]]]+=post[j1][sample[s][i]*3+1]+2*post[j1][sample[s][i]*3+2];
-            extilde[1][y[sample[s][i]]]+=post[j2][sample[s][i]*3+1]+2*post[j2][sample[s][i]*3+2];                
+            extilde[0][y[sample[s][i]]]+=(post[j1][sample[s][i]*3+1]+2*post[j1][sample[s][i]*3+2]);
+            extilde[1][y[sample[s][i]]]+=(post[j2][sample[s][i]*3+1]+2*post[j2][sample[s][i]*3+2]);
+
+            if(s>0){
+              extilde[0][y[sample[s][i]]]-=mean[j1][y[sample[s][i]]];
+              extilde[1][y[sample[s][i]]]-=mean[j2][y[sample[s][i]]];
+            }             
           }
           ytilde=ytilde/keep;
           for(int i=0;i<2;i++){
@@ -1442,8 +1462,13 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
           double cov[2] = {0};
           for(int i=0;i<keep;i++){
 
-            double ex1 = post[j1][sample[s][i]*3+1]+2*post[j1][sample[s][i]*3+2];
-            double ex2 = post[j2][sample[s][i]*3+1]+2*post[j2][sample[s][i]*3+2];
+            double ex1 = (post[j1][sample[s][i]*3+1]+2*post[j1][sample[s][i]*3+2]);
+            double ex2 = (post[j2][sample[s][i]*3+1]+2*post[j2][sample[s][i]*3+2]);
+
+            if(s>0){
+              ex1 -= mean[j1][y[sample[s][i]]];
+              ex2 -= mean[j2][y[sample[s][i]]];
+            }
 
             // If we are on the diagonal, update the score.
             if(j1 == j2){
