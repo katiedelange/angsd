@@ -36,6 +36,7 @@ void abcAsso::printArg(FILE *argFile){
   fprintf(argFile,"\t-yQuant\t\t%s\t(File containing phenotypes)\n",yfile);
   fprintf(argFile,"\t-minHigh\t%d\t(Require atleast minHigh number of high credible genotypes)\n",minHigh);
   fprintf(argFile,"\t-minCount\t%d\t(Require this number of minor alleles, estimated from MAF)\n",minCount);
+  fprintf(argFile,"\t-numBootstraps\t%d\t(The number of bootstrap samples to generate when performing rare RVS burden testing)\n",numBootstraps);
   fprintf(argFile,"\t-cov\t\t%s\t(File containing additional covariates)\n",covfile);
   fprintf(argFile,"\t-model\t%d\n",model);
   fprintf(argFile,"\t1: Additive/Log-Additive (Default)\n");
@@ -61,6 +62,7 @@ void abcAsso::getOptions(argStruct *arguments){
   minHigh=angsd::getArg("-minHigh",minHigh,arguments);
   doPrint=angsd::getArg("-doPrint",doPrint,arguments);
   minCount=angsd::getArg("-minCount",minCount,arguments);
+  numBootstraps=angsd::getArg("-numBootstraps",numBootstraps,arguments);  
   sitePerm=angsd::getArg("-sitePerm",sitePerm,arguments);
   GL=angsd::getArg("-GL",GL,arguments);
   covfile=angsd::getArg("-cov",covfile,arguments);
@@ -112,6 +114,7 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
   yfile=NULL;
   minHigh=10;
   minCount=10;
+  numBootstraps=1000;
   dynCov=0;//not for users
   minCov=5;//not for users
   adjust=1;//not for users
@@ -1352,14 +1355,10 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
       mean[j][1]=mean[j][1]/n[1];
     }
 
-    // TO DO: Extend this so the user can specify the number of bootstrap samples to generate.
-    // For now, default it to 1000.
-    int nPerm = 1000+1;
-
-    // Generate nPerm random subsets of cases and controls (with replacement). Sample cases
+    // Generate numBootstraps random subsets of cases and controls (with replacement). Sample cases
     // and controls separately, maintaining the two distinct groups.
     // Skip over any excludeInds.
-    int** sample = new int*[nPerm];
+    int** sample = new int*[numBootstraps+1];
     
     // Set up the original sample first.
     sample[0] = new int[keep];
@@ -1371,8 +1370,8 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
       }
     }
 
-    // Generate nPerm random samples (with replacement).
-    for(int s=1;s<=nPerm;s++){
+    // Generate numBootstraps random samples (with replacement).
+    for(int s=1;s<=numBootstraps;s++){
 
       // Create a new row in the samples matrix to store the new set of individual indices.
       sample[s] = new int[keep];
@@ -1407,9 +1406,9 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
     }
 
     // Initialise results vectors to store the scoreSum and varSum for each permutation.
-    double* score =new double[nPerm];
-    double* var =new double[nPerm];
-    for(int s=0;s<nPerm;s++){
+    double* score =new double[numBootstraps+1];
+    double* var =new double[numBootstraps+1];
+    for(int s=0;s<numBootstraps+1;s++){
       score[s] = 0;
       var[s] = 0;
     }
@@ -1435,7 +1434,7 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
           continue;
 
         // For each bootstrapped sample:
-        for(int s=0;s<nPerm;s++){
+        for(int s=0;s<numBootstraps+1;s++){
 
           double ytilde = 0;
           double extilde[2][2] = {0};
@@ -1522,7 +1521,7 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
     // Compute CAST statistics for each bootstrapped sample. If the absolute value of the test statistic
     // for the bootstrap sample is greater than for the original sample, add 1 to the count.
     int count = 0;
-    for(int s=1;s<=nPerm;s++){
+    for(int s=1;s<=numBootstraps;s++){
       double test = score[s]/sqrt(var[s]);
       if(test < 0)
         test *= -1;
@@ -1532,7 +1531,7 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
 
     // Compute the final p value, as the proportion of bootstrap samples with an absolute test
     // statistic greater than or equal to the original sample.
-    assoc->burden[yi] = (double)count/(nPerm-1);
+    assoc->burden[yi] = (double)count/numBootstraps;
   }
 
   // Return the individual LRT statistics.

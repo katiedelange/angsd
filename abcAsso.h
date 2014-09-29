@@ -32,6 +32,7 @@ public:
   int isBinary;
   int minHigh;
   int minCount;
+  int numBootstraps;
   int adjust;  //not for users
   int model;
   void run(funkyPars  *pars);
