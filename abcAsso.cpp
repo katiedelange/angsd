@@ -1355,183 +1355,204 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
       mean[j][1]=mean[j][1]/n[1];
     }
 
-    // Generate numBootstraps random subsets of cases and controls (with replacement). Sample cases
-    // and controls separately, maintaining the two distinct groups.
-    // Skip over any excludeInds.
-    int** sample = new int*[numBootstraps+1];
-    
-    // Set up the original sample first.
-    sample[0] = new int[keep];
-    int index = 0;
-    for(int i=0;i<pars->nInd;i++){
-      if(excludeInd[i] == 0){
-        sample[0][index] = i;
-        index++;
-      }
+
+    // If numBootstraps is set to -1, then use the adaptive permutations method. Otherwise, just
+    // perform the requested number of bootstrap samples.
+    double CAST = 0.000000;
+    int perm = 1000;
+    if(numBootstraps != -1){
+      perm = numBootstraps;
     }
 
-    // Generate numBootstraps random samples (with replacement).
-    for(int s=1;s<=numBootstraps;s++){
+    do{ 
 
-      // Create a new row in the samples matrix to store the new set of individual indices.
-      sample[s] = new int[keep];
+      fprintf(stderr,"Trying %d permutations...\n",perm);
+
+      // Generate numBootstraps random subsets of cases and controls (with replacement). Sample cases
+      // and controls separately, maintaining the two distinct groups.
+      // Skip over any excludeInds.
+      int** sample = new int*[perm+1];
       
-      int cases = 0;
-      int controls = 0;
-      index = 0;
-      while(controls < n[0] || cases < n[1]){
-        
-        // Sample a new individual.
-        int i = rand() % pars->nInd;
-
-        // Skip any marked for exclusion.
+      // Set up the original sample first.
+      sample[0] = new int[keep];
+      int index = 0;
+      for(int i=0;i<pars->nInd;i++){
         if(excludeInd[i] == 0){
+          sample[0][index] = i;
+          index++;
+        }
+      }
 
-          // If it is a control, and we have not already met our control quota,
-          // add it to the list.
-          if(y[i] == 0 && controls < n[0]){
-            sample[s][index] = i;
-            index++;
-            controls++;          
-          }
-          // Otherwise, if it's a case and we haven't met the case quota,
-          // add it to the list.
-          else if(y[i] == 1 && cases < n[1]){
-            sample[s][index] = i;
-            index++;
-            cases++;          
+      // Generate numBootstraps random samples (with replacement).
+      for(int s=1;s<=perm;s++){
+
+        // Create a new row in the samples matrix to store the new set of individual indices.
+        sample[s] = new int[keep];
+        
+        int cases = 0;
+        int controls = 0;
+        index = 0;
+        while(controls < n[0] || cases < n[1]){
+          
+          // Sample a new individual.
+          int i = rand() % pars->nInd;
+
+          // Skip any marked for exclusion.
+          if(excludeInd[i] == 0){
+
+            // If it is a control, and we have not already met our control quota,
+            // add it to the list.
+            if(y[i] == 0 && controls < n[0]){
+              sample[s][index] = i;
+              index++;
+              controls++;          
+            }
+            // Otherwise, if it's a case and we haven't met the case quota,
+            // add it to the list.
+            else if(y[i] == 1 && cases < n[1]){
+              sample[s][index] = i;
+              index++;
+              cases++;          
+            }
           }
         }
       }
-    }
 
-    // Initialise results vectors to store the scoreSum and varSum for each permutation.
-    double* score =new double[numBootstraps+1];
-    double* var =new double[numBootstraps+1];
-    for(int s=0;s<numBootstraps+1;s++){
-      score[s] = 0;
-      var[s] = 0;
-    }
+      // Initialise results vectors to store the scoreSum and varSum for each permutation.
+      double* score =new double[perm+1];
+      double* var =new double[perm+1];
+      for(int s=0;s<perm+1;s++){
+        score[s] = 0;
+        var[s] = 0;
+      }
 
-    // Loop through each combination of sites. 
-    for(int j1=0;j1<pars->numSites;j1++){
+      // Loop through each combination of sites. 
+      for(int j1=0;j1<pars->numSites;j1++){
 
-      // Skip any sites marked for removal.
-      if(pars->keepSites[j1]==0)
-        continue;
-
-      // Track the high-confidence heterozygosity and homozygosity rates for filtering.
-      int highHE[2]={0};
-      int highHO[2]={0};
-      int highWT[2]={0};
-
-      // The variance-covariance matrix is symmetric, so we can
-      // save on processing time by only processing one half.
-      for(int j2=j1;j2<pars->numSites;j2++){ 
-
-        // Skip any sites already marked for removal.
-        if(pars->keepSites[j2]==0)
+        // Skip any sites marked for removal.
+        if(pars->keepSites[j1]==0)
           continue;
 
-        // For each bootstrapped sample:
-        for(int s=0;s<numBootstraps+1;s++){
+        // Track the high-confidence heterozygosity and homozygosity rates for filtering.
+        int highHE[2]={0};
+        int highHO[2]={0};
+        int highWT[2]={0};
 
-          double ytilde = 0;
-          double extilde[2][2] = {0};
+        // The variance-covariance matrix is symmetric, so we can
+        // save on processing time by only processing one half.
+        for(int j2=j1;j2<pars->numSites;j2++){ 
 
-          // Determine the mean of the phenotypes and (centred) expected genotypes for this sample.
-          for(int i=0;i<keep;i++){
-            ytilde+=y[sample[s][i]];
-            extilde[0][y[sample[s][i]]]+=(post[j1][sample[s][i]*3+1]+2*post[j1][sample[s][i]*3+2]);
-            extilde[1][y[sample[s][i]]]+=(post[j2][sample[s][i]*3+1]+2*post[j2][sample[s][i]*3+2]);
+          // Skip any sites already marked for removal.
+          if(pars->keepSites[j2]==0)
+            continue;
 
-            if(s>0){
-              extilde[0][y[sample[s][i]]]-=mean[j1][y[sample[s][i]]];
-              extilde[1][y[sample[s][i]]]-=mean[j2][y[sample[s][i]]];
-            }             
-          }
-          ytilde=ytilde/keep;
-          for(int i=0;i<2;i++){
-            for(int j=0;j<2;j++){
-              extilde[i][j]=extilde[i][j]/n[j];
+          // For each bootstrapped sample:
+          for(int s=0;s<perm+1;s++){
+
+            double ytilde = 0;
+            double extilde[2][2] = {0};
+
+            // Determine the mean of the phenotypes and (centred) expected genotypes for this sample.
+            for(int i=0;i<keep;i++){
+              ytilde+=y[sample[s][i]];
+              extilde[0][y[sample[s][i]]]+=(post[j1][sample[s][i]*3+1]+2*post[j1][sample[s][i]*3+2]);
+              extilde[1][y[sample[s][i]]]+=(post[j2][sample[s][i]*3+1]+2*post[j2][sample[s][i]*3+2]);
+
+              if(s>0){
+                extilde[0][y[sample[s][i]]]-=mean[j1][y[sample[s][i]]];
+                extilde[1][y[sample[s][i]]]-=mean[j2][y[sample[s][i]]];
+              }             
             }
-          }
-
-          // Calculate the score and (co)variance values
-          double cov[2] = {0};
-          for(int i=0;i<keep;i++){
-
-            double ex1 = (post[j1][sample[s][i]*3+1]+2*post[j1][sample[s][i]*3+2]);
-            double ex2 = (post[j2][sample[s][i]*3+1]+2*post[j2][sample[s][i]*3+2]);
-
-            if(s>0){
-              ex1 -= mean[j1][y[sample[s][i]]];
-              ex2 -= mean[j2][y[sample[s][i]]];
-            }
-
-            // If we are on the diagonal, update the score.
-            if(j1 == j2){
-              score[s]+= ex1*(y[sample[s][i]]-ytilde);
-
-              // For the original sample, also update the single site statistic,
-              // and track heterozygosity and homozygosity rates for filtering.
-              if(s==0){
-                stat[yi][j1]+=ex1*(y[sample[s][i]]-ytilde);
-                if(post[j1][sample[s][i]*3+0]>0.9)
-                  highWT[y[sample[s][i]]]++;
-                if(post[j1][sample[s][i]*3+1]>0.9)
-                  highHE[y[sample[s][i]]]++;
-                if(post[j1][sample[s][i]*3+2]>0.9)
-                  highHO[y[sample[s][i]]]++;
+            ytilde=ytilde/keep;
+            for(int i=0;i<2;i++){
+              for(int j=0;j<2;j++){
+                extilde[i][j]=extilde[i][j]/n[j];
               }
             }
 
-            // Compute the (co)variance for the cases and controls separately.
-            cov[y[sample[s][i]]] += (ex1 - extilde[0][y[sample[s][i]]]) * (ex2 - extilde[1][y[sample[s][i]]]);
-          }
+            // Calculate the score and (co)variance values
+            double cov[2] = {0};
+            for(int i=0;i<keep;i++){
 
-          // Update the variance sum
-          double variance = pow(((double)n[0]/(n[0]+n[1])),2)*cov[1] + pow(((double)n[1]/(n[0]+n[1])),2)*cov[0];          
-          var[s] += variance;
+              double ex1 = (post[j1][sample[s][i]*3+1]+2*post[j1][sample[s][i]*3+2]);
+              double ex2 = (post[j2][sample[s][i]*3+1]+2*post[j2][sample[s][i]*3+2]);
 
-          // Add the variance twice if we are not on a diagonal (because of the symmetrical matrix).
-          if(j1 != j2){
-            var[s] += variance;            
-          }
-          // If we are on the diagonal for the original sample, update the test statistic and 
-          // store the HE/HO/WT values.
-          else if(s==0){
-            stat[yi][j1]=pow(stat[yi][j1],2)/variance;
-            assoc->highWt[0][j1] = highWT[0];
-            assoc->highHe[0][j1] = highHE[0];
-            assoc->highHo[0][j1] = highHO[0];
-            assoc->highWt[1][j1] = highWT[1];
-            assoc->highHe[1][j1] = highHE[1];
-            assoc->highHo[1][j1] = highHO[1];                
+              if(s>0){
+                ex1 -= mean[j1][y[sample[s][i]]];
+                ex2 -= mean[j2][y[sample[s][i]]];
+              }
+
+              // If we are on the diagonal, update the score.
+              if(j1 == j2){
+                score[s]+= ex1*(y[sample[s][i]]-ytilde);
+
+                // For the original sample, also update the single site statistic,
+                // and track heterozygosity and homozygosity rates for filtering.
+                if(s==0){
+                  stat[yi][j1]+=ex1*(y[sample[s][i]]-ytilde);
+                  if(post[j1][sample[s][i]*3+0]>0.9)
+                    highWT[y[sample[s][i]]]++;
+                  if(post[j1][sample[s][i]*3+1]>0.9)
+                    highHE[y[sample[s][i]]]++;
+                  if(post[j1][sample[s][i]*3+2]>0.9)
+                    highHO[y[sample[s][i]]]++;
+                }
+              }
+
+              // Compute the (co)variance for the cases and controls separately.
+              cov[y[sample[s][i]]] += (ex1 - extilde[0][y[sample[s][i]]]) * (ex2 - extilde[1][y[sample[s][i]]]);
+            }
+
+            // Update the variance sum
+            double variance = pow(((double)n[0]/(n[0]+n[1])),2)*cov[1] + pow(((double)n[1]/(n[0]+n[1])),2)*cov[0];          
+            var[s] += variance;
+
+            // Add the variance twice if we are not on a diagonal (because of the symmetrical matrix).
+            if(j1 != j2){
+              var[s] += variance;            
+            }
+            // If we are on the diagonal for the original sample, update the test statistic and 
+            // store the HE/HO/WT values.
+            else if(s==0){
+              stat[yi][j1]=pow(stat[yi][j1],2)/variance;
+              assoc->highWt[0][j1] = highWT[0];
+              assoc->highHe[0][j1] = highHE[0];
+              assoc->highHo[0][j1] = highHO[0];
+              assoc->highWt[1][j1] = highWT[1];
+              assoc->highHe[1][j1] = highHE[1];
+              assoc->highHo[1][j1] = highHO[1];                
+            }
           }
         }
       }
-    }
 
-    // Compute a CAST statistic for the original sample. Take the absolute value of the test statistic.
-    double baseline = score[0]/sqrt(var[0]);
-    if(baseline < 0)
-      baseline *= -1;
+      // Compute a CAST statistic for the original sample. Take the absolute value of the test statistic.
+      double baseline = score[0]/sqrt(var[0]);
+      if(baseline < 0)
+        baseline *= -1;
 
-    // Compute CAST statistics for each bootstrapped sample. If the absolute value of the test statistic
-    // for the bootstrap sample is greater than for the original sample, add 1 to the count.
-    int count = 0;
-    for(int s=1;s<=numBootstraps;s++){
-      double test = score[s]/sqrt(var[s]);
-      if(test < 0)
-        test *= -1;
-      if(test>=baseline)
-        count++;
-    }
+      // Compute CAST statistics for each bootstrapped sample. If the absolute value of the test statistic
+      // for the bootstrap sample is greater than for the original sample, add 1 to the count.
+      int count = 0;
+      for(int s=1;s<=perm;s++){
+        double test = score[s]/sqrt(var[s]);
+        if(test < 0)
+          test *= -1;
+        if(test>=baseline)
+          count++;
+      }
+
+      // Update the current CAST p-value, and the next number of bootstraps to perform
+      CAST=(double)count/perm;
+      perm *= 10;
+
+      fprintf(stderr,"CAST = %f\n",CAST);
+
+    }while(numBootstraps == -1 && CAST <= 10/(perm/10) && perm <= 100000000);
 
     // Compute the final p value, as the proportion of bootstrap samples with an absolute test
     // statistic greater than or equal to the original sample.
-    assoc->burden[yi] = (double)count/numBootstraps;
+    assoc->burden[yi] = CAST;
   }
 
   // Return the individual LRT statistics.
