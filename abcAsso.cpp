@@ -1418,13 +1418,30 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
         }
       }
 
-      // Initialise results vectors to store the scoreSum and varSum for each permutation.
-      double* score =new double[perm+1];
-      double* var =new double[perm+1];
-      for(int s=0;s<perm+1;s++){
-        score[s] = 0;
-        var[s] = 0;
+      // Quickly check how many sites we will actually be keeping.
+      int keepSites = 0;      
+      for(int j=0;j<pars->numSites;j++){
+        if(pars->keepSites[j]==0)
+          continue;
+        keepSites++;
       }
+
+      // Initialise results vectors to store the scoreSum and varSum for each permutation.
+      double** score =new double*[perm+1];
+      double*** var =new double**[perm+1];
+      for(int s=0;s<perm+1;s++){
+        score[s] = new double[keepSites];
+        var[s] = new double*[keepSites];
+        for(int j=0;j<keepSites;j++){
+          var[s][j] = new double[keepSites];
+          score[s][j]=0;
+        }
+      }
+
+      // We don't want to store huge score vectors and covariance matrices unecessarily.
+      // Keep track of the number of actually processed variants we have.
+      int output_j1=-1;
+      int output_j2=-1;
 
       // Loop through each combination of sites. 
       for(int j1=0;j1<pars->numSites;j1++){
@@ -1432,6 +1449,9 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
         // Skip any sites marked for removal.
         if(pars->keepSites[j1]==0)
           continue;
+
+        output_j1++;
+        output_j2=-1;
 
         // Track the high-confidence heterozygosity and homozygosity rates for filtering.
         int highHE[2]={0};
@@ -1445,6 +1465,8 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
           // Skip any sites already marked for removal.
           if(pars->keepSites[j2]==0)
             continue;
+
+          output_j2++;
 
           // For each bootstrapped sample:
           for(int s=0;s<perm+1;s++){
@@ -1484,7 +1506,7 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
 
               // If we are on the diagonal, update the score.
               if(j1 == j2){
-                score[s]+= ex1*(y[sample[s][i]]-ytilde);
+                score[s][output_j1]+= ex1*(y[sample[s][i]]-ytilde);
 
                 // For the original sample, also update the single site statistic,
                 // and track heterozygosity and homozygosity rates for filtering.
@@ -1505,15 +1527,11 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
 
             // Update the variance sum
             double variance = pow(((double)n[0]/(n[0]+n[1])),2)*cov[1] + pow(((double)n[1]/(n[0]+n[1])),2)*cov[0];          
-            var[s] += variance;
+            var[s][output_j1][output_j2] = var[s][output_j2][output_j1] = variance;
 
-            // Add the variance twice if we are not on a diagonal (because of the symmetrical matrix).
-            if(j1 != j2){
-              var[s] += variance;            
-            }
             // If we are on the diagonal for the original sample, update the test statistic and 
             // store the HE/HO/WT values.
-            else if(s==0){
+            if(s==0 && j1 == j2){
               stat[yi][j1]=pow(stat[yi][j1],2)/variance;
               assoc->highWt[0][j1] = highWT[0];
               assoc->highHe[0][j1] = highHE[0];
@@ -1527,7 +1545,7 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
       }
 
       // Compute a CAST statistic for the original sample. Take the absolute value of the test statistic.
-      double baseline = score[0]/sqrt(var[0]);
+      double baseline = calculateCAST(score[0],var[0],keepSites);
       if(baseline < 0)
         baseline *= -1;
 
@@ -1535,7 +1553,7 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
       // for the bootstrap sample is greater than for the original sample, add 1 to the count.
       int count = 0;
       for(int s=1;s<=perm;s++){
-        double test = score[s]/sqrt(var[s]);
+        double test = calculateCAST(score[s],var[s],keepSites);
         if(test < 0)
           test *= -1;
         if(test>=baseline)
@@ -1548,7 +1566,7 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
 
       fprintf(stderr,"CAST = %f\n",CAST);
 
-    }while(numBootstraps == -1 && CAST <= 10/(perm/10) && perm <= 100000000);
+    }while(numBootstraps == -1 && CAST <= 100/(perm/10) && perm <= 1000000);
 
     // Compute the final p value, as the proportion of bootstrap samples with an absolute test
     // statistic greater than or equal to the original sample.
@@ -1557,6 +1575,27 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
 
   // Return the individual LRT statistics.
   return stat;
+}
+
+// This method takes a vector of scores and a covariance matrix, and uses them to compute
+// a CAST-style statistic for use in performing rare burden tests.
+double abcAsso::calculateCAST(double* scores, double** covariance_matrix, int numSites){
+
+  // Sum up all the values in the scores vector and covariance matrix respectively
+  double score = 0;
+  double var = 0;
+  for(int j1=0; j1 < numSites; j1++){
+    score += scores[j1];
+    for(int j2=0; j2 < numSites; j2++){
+      var += covariance_matrix[j1][j2];
+      fprintf(stdout,"%f,",covariance_matrix[j1][j2]);
+    }
+  }
+
+  fprintf(stdout,"\n");
+
+  // Return the score sum divided by the square root of the variance sum
+  return score/sqrt(var);
 }
 
 void abcAsso::printDoAsso(funkyPars *pars){

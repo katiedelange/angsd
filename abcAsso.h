@@ -57,6 +57,7 @@ public:
   double normScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
   double binomScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
   double binomRVScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
-  double** binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc);  
+  double** binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc);
+  double calculateCAST(double* scores, double** covariance_matrix, int numSites);
   void printDoAsso(funkyPars *pars);
 };
