@@ -245,7 +245,7 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
     else if(doAsso==4)
       gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tN\tLRT_filtered\tLRT_rvs\tLRT_std\thigh_WT/HE/HO\n");
     else if(doAsso==5)
-      gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tLRT_rvs\tCAST\tCONT_high_WT/HE/HO\tCASE_high_WT/HE/HO\n");
+      gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tLRT_rvs\tCAST\tnPerm\tCONT_high_WT/HE/HO\tCASE_high_WT/HE/HO\n");
     else
       gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tLRT\n");
   }
@@ -291,6 +291,7 @@ void abcAsso::clean(funkyPars *pars){
   delete[]  assoc->std_LRT;
   delete[]  assoc->rvs_LRT;
   delete[]  assoc->burden;
+  delete[]  assoc->numPerm;
 
   if(assoc->keepInd!=NULL)
     for( int yi =0;yi<ymat.y;yi++)
@@ -323,6 +324,7 @@ assoStruct *allocAssoStruct(){
   assoc->std_LRT = NULL;
   assoc->rvs_LRT = NULL;
   assoc->burden = NULL;
+  assoc->numPerm = NULL;
 
   return assoc;
 }
@@ -354,6 +356,7 @@ void abcAsso::run(funkyPars *pars){
     assoc->std_LRT=new double[pars->numSites];
     assoc->rvs_LRT=new double[pars->numSites];
     assoc->burden=new double[ymat.y];
+    assoc->numPerm=new int[ymat.y];
 
     scoreAsso(pars,assoc);
   }
@@ -1287,6 +1290,9 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
 
     // Initialise the stat array for this phenotype variable.
     stat[yi] = new double[pars->numSites];
+    for(int j=0 ; j<pars->numSites ;j++){
+      stat[yi][j]=0;
+    }
 
     // Mark out individuals that will need to be skipped, generally due to missing phenotype.
     // Covariate compatibility is not currently implemented, but if it is then it is also
@@ -1566,7 +1572,10 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
 
       fprintf(stderr,"CAST = %f\n",CAST);
 
-    }while(numBootstraps == -1 && CAST <= 100/(perm/10) && perm <= 1000000);
+    }while(numBootstraps == -1 && CAST <= (100.0/(perm/10)) && perm <= 1000000);
+
+    // Store how many bootstrap samples were performed.
+    assoc->numPerm[yi] = perm /= 10;
 
     // Compute the final p value, as the proportion of bootstrap samples with an absolute test
     // statistic greater than or equal to the original sample.
@@ -1588,11 +1597,8 @@ double abcAsso::calculateCAST(double* scores, double** covariance_matrix, int nu
     score += scores[j1];
     for(int j2=0; j2 < numSites; j2++){
       var += covariance_matrix[j1][j2];
-      fprintf(stdout,"%f,",covariance_matrix[j1][j2]);
     }
   }
-
-  fprintf(stdout,"\n");
 
   // Return the score sum divided by the square root of the variance sum
   return score/sqrt(var);
@@ -1615,7 +1621,7 @@ void abcAsso::printDoAsso(funkyPars *pars){
       }else if(doAsso==4){
         ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%f\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->rvs_LRT[s],assoc->std_LRT[s],assoc->highWt[0][s],assoc->highHe[0][s],assoc->highHo[0][s]);
       }else if(doAsso==5){
-        ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t%d/%d/%d\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->stat[yi][s],assoc->burden[yi],assoc->highWt[0][s],assoc->highHe[0][s],assoc->highHo[0][s],assoc->highWt[1][s],assoc->highHe[1][s],assoc->highHo[1][s]);
+        ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t%d\t%d/%d/%d\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->stat[yi][s],assoc->burden[yi],assoc->numPerm[yi],assoc->highWt[0][s],assoc->highHe[0][s],assoc->highHo[0][s],assoc->highWt[1][s],assoc->highHe[1][s],assoc->highHo[1][s]);
       }else{
         ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->stat[yi][s]);
       }

@@ -10,6 +10,7 @@ typedef struct{
   double *rvs_LRT;  
   double *std_LRT;
   double *burden;
+  int *numPerm;
 
 }assoStruct;
 
