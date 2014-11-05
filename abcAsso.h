@@ -4,9 +4,9 @@ typedef struct{
 
   double **stat;
   int **keepInd;
-  int **highHe;
-  int **highWt;
-  int **highHo;
+  int ***highHe;
+  int ***highWt;
+  int ***highHo;
   double *rvs_LRT;  
   double *std_LRT;
   double *burden;
@@ -59,6 +59,7 @@ public:
   double binomScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
   double binomRVScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
   double** binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc);
-  double calculateCAST(double* scores, double** covariance_matrix, int numSites);
+  double calculateCAST(double y_bar, std::vector<std::vector<std::vector<double> > > expected_gt);
+  double covarSum(std::vector<std::vector<std::vector<double> > > expected_gt);
   void printDoAsso(funkyPars *pars);
 };
