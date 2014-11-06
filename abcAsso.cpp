@@ -1378,43 +1378,31 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
     // Calculate the average phenotype and subtract it from every element in the phenotype vector.
     double y_bar = std::accumulate(y.begin(),y.end(),0.0) / y.size();
 
-    // Calculate the single site results for each variant, FOR TESTING ONLY.
-    double score = 0;
+    // Based on the number of cases and controls, compute a factor to use when combining variances.
+    double *F = new double[2];
+    F[1] = pow((expected_gt.at(0).at(0).size()/(expected_gt.at(1).at(0).size()+expected_gt.at(0).at(0).size()+0.0)),2); //* expected_gt.at(1).at(0).size()
+    F[0] = pow((expected_gt.at(1).at(0).size()/(expected_gt.at(1).at(0).size()+expected_gt.at(0).at(0).size()+0.0)),2); //* expected_gt.at(0).at(0).size()
+
+
+    // Get the scores for the single site statistics.
     for(int j=0;j<expected_gt.at(0).size();j++){
-
-      // Compute the score.
-      stat[yi][pos[j]]=(0-y_bar)*std::accumulate(expected_gt.at(0).at(j).begin(),expected_gt.at(0).at(j).end(),0.0) +
-                  (1-y_bar)*std::accumulate(expected_gt.at(1).at(j).begin(),expected_gt.at(1).at(j).end(),0.0);
-      score+=stat[yi][pos[j]];
-
-      // Subtract the mean expected genotype from the original sample (for cases and controls
-      // separately) from all cells in the expected genotypes table, to center the vectors.
-      double var[2] = {0};
-      for(int n=0;n<=1;n++){
-        double eg_bar = std::accumulate(expected_gt.at(n).at(j).begin(),expected_gt.at(n).at(j).end(),0.0) / expected_gt.at(n).at(j).size();
-        std::transform(expected_gt.at(n).at(j).begin(),expected_gt.at(n).at(j).end(),expected_gt.at(n).at(j).begin(),std::bind2nd(std::minus<double>(),eg_bar));
-        var[n]=std::inner_product(expected_gt.at(n).at(j).begin(),expected_gt.at(n).at(j).end(),expected_gt.at(n).at(j).begin(),0.0);
-      }
-
-      // Used to combine the case and control variances.
-      double case_factor = pow((expected_gt.at(0).at(0).size()/(expected_gt.at(1).at(0).size()+expected_gt.at(0).at(0).size()+0.0)),2); //* expected_gt.at(1).at(0).size()
-      double ctrl_factor = pow((expected_gt.at(1).at(0).size()/(expected_gt.at(1).at(0).size()+expected_gt.at(0).at(0).size()+0.0)),2); //* expected_gt.at(0).at(0).size()
-
-      // Get the variance for this site, and compute a single site RVS score for testing.
-      stat[yi][pos[j]] = pow(stat[yi][pos[j]],2)/(case_factor*var[1] + ctrl_factor*var[0]);
+      stat[yi][pos[j]]=(0-y_bar)*std::accumulate(expected_gt.at(0).at(j).begin(),expected_gt.at(0).at(j).end(),0.0) + (1-y_bar)*std::accumulate(expected_gt.at(1).at(j).begin(),expected_gt.at(1).at(j).end(),0.0);
     }
-
-    // Get the variance for the unpermuted sample burden test.
-    double var = covarSum(expected_gt);
 
     // Compute the baseline test statistic for the unpermuted sample.
-    double baseline = score/sqrt(var);
-    if(baseline<0){
-      baseline*=-1;
+    double baseline = calculateCAST(y_bar,F,expected_gt);
+
+    // Get the variances for the single site statistics.
+    double score = 0;
+    for(int j=0;j<expected_gt.at(0).size();j++){
+      double var[2] = {0};
+      for(int n=0;n<=1;n++){
+        var[n]=std::inner_product(expected_gt.at(n).at(j).begin(),expected_gt.at(n).at(j).end(),expected_gt.at(n).at(j).begin(),0.0);
+      }
+      stat[yi][pos[j]] = pow(stat[yi][pos[j]],2)/(F[1]*var[1] + F[0]*var[0]);
     }
 
-    fprintf(stderr,"SCORE: %f\tVAR: %f\tTEST: %f\n",score,var,baseline);
-
+    // Perform the permutation testing.
     int perm=0;
     int sig=0;
     int checkpoint=1000;   
@@ -1437,7 +1425,7 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
       }
 
       // Calculate a CAST statistic.
-      double cast = calculateCAST(y_bar,sample);
+      double cast = calculateCAST(y_bar,F,sample);
 
       // Increment the sig counter if it is > baseline.
       if(cast>baseline){
@@ -1471,56 +1459,42 @@ double** abcAsso::binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc){
 
 // This method takes a vector of scores and a covariance matrix, and uses them to compute
 // a CAST-style statistic for use in performing rare burden tests.
-double abcAsso::calculateCAST(double y_bar, std::vector<std::vector<std::vector<double> > > expected_gt){
+double abcAsso::calculateCAST(double y_bar, double *F, std::vector<std::vector<std::vector<double> > > &expected_gt){
 
-  // 1. Score
   double score = 0;
-  for(int j=0;j<expected_gt.at(0).size();j++){
-    score+=(0-y_bar)*std::accumulate(expected_gt.at(0).at(j).begin(),expected_gt.at(0).at(j).end(),0.0) +
-           (1-y_bar)*std::accumulate(expected_gt.at(1).at(j).begin(),expected_gt.at(1).at(j).end(),0.0);
-  }
+  double cov[2] = {0};
+  for(int n=0;n<=1;n++){
+    for(int j=0;j<expected_gt.at(0).size();j++){
+      
+      // Sum up the expected genotypes.
+      double sum = std::accumulate(expected_gt.at(n).at(j).begin(),expected_gt.at(n).at(j).end(),0.0);
 
-  // 2. Variance
-  // a) Subtract column means from each cell.
-  for(int j=0;j<expected_gt.at(0).size();j++){
-    for(int n=0;n<=1;n++){
-      double eg_bar = std::accumulate(expected_gt.at(n).at(j).begin(),expected_gt.at(n).at(j).end(),0.0) / expected_gt.at(n).at(j).size();
+      // Update the score
+      score+=(n-y_bar)*sum;
+
+      // Subtract the mean from each column
+      double eg_bar = sum / expected_gt.at(n).at(j).size();
       std::transform(expected_gt.at(n).at(j).begin(),expected_gt.at(n).at(j).end(),expected_gt.at(n).at(j).begin(),std::bind2nd(std::minus<double>(),eg_bar));
+
+      // Update the covariance.
+      for(int k=0;k<=j;k++){
+        cov[n]+=((k!=j)+1)*std::inner_product(expected_gt.at(n).at(j).begin(),expected_gt.at(n).at(j).end(),expected_gt.at(n).at(k).begin(),0.0);
+      }
     }
   }
-  // b) Compute the variance-covariance sum.
-  double var = covarSum(expected_gt);
+
+  // Return the overall variance for the burden test.
+  double var = F[1]*cov[1] + F[0]*cov[0];
 
   // Return the score sum divided by the square root of the variance sum
   double cast=score/sqrt(var);
   if(cast<0){
     cast*=-1;
   }
+
+  //fprintf(stderr,"SCORE: %f\tVAR: %f\tTEST: %f\n",score,var,cast);
+
   return cast;
-}
-
-// Sum up the covariances for each site, for cases and controls separately.
-double abcAsso::covarSum(std::vector<std::vector<std::vector<double> > > expected_gt){
-
-  // Compute cartesian products for each row (individual).
-  // TODO: This is the slow bit, think of a way to reduce the number of for loops...
-  double cov[2] = {0};
-  for(int n=0;n<=1;n++){
-    for(int i=0;i<expected_gt.at(n).at(0).size();i++){
-      for(int j=0;j<expected_gt.at(n).size();j++){
-        for(int k=j;k<expected_gt.at(n).size();k++){
-          cov[n]+=((k!=j)+1)*expected_gt.at(n).at(j).at(i)*expected_gt.at(n).at(k).at(i);
-        }
-      }
-    }
-  }
-
-  // Used to combine the case and control covariance matrices.
-  double case_factor = pow((expected_gt.at(0).at(0).size()/(expected_gt.at(1).at(0).size()+expected_gt.at(0).at(0).size()+0.0)),2); //* expected_gt.at(1).at(0).size()
-  double ctrl_factor = pow((expected_gt.at(1).at(0).size()/(expected_gt.at(1).at(0).size()+expected_gt.at(0).at(0).size()+0.0)),2); //* expected_gt.at(0).at(0).size()
-
-  // Return the overall variance for the burden test.
-  return case_factor*cov[1] + ctrl_factor*cov[0];
 }
 
 void abcAsso::printDoAsso(funkyPars *pars){

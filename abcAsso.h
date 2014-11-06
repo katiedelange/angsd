@@ -59,7 +59,6 @@ public:
   double binomScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
   double binomRVScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
   double** binomRVScoreEnvRare(funkyPars  *pars,assoStruct *assoc);
-  double calculateCAST(double y_bar, std::vector<std::vector<std::vector<double> > > expected_gt);
-  double covarSum(std::vector<std::vector<std::vector<double> > > expected_gt);
+  double calculateCAST(double y_bar, double *F, std::vector<std::vector<std::vector<double> > > &expected_gt);
   void printDoAsso(funkyPars *pars);
 };
