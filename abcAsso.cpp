@@ -284,6 +284,16 @@ void abcAsso::clean(funkyPars *pars){
   delete[]  assoc->highHe;
   delete[]  assoc->highHo;
   
+  if(assoc->scores!=NULL){
+    for(int yi=0;yi<ymat.y;yi++){
+      for(int s=0;s<pars->numSites;s++){
+        delete[] assoc->scores[yi][s];
+      }
+      delete[] assoc->scores[yi];
+    }
+  }
+  delete[] assoc->stat;
+
   if(assoc->keepInd!=NULL)
     for( int yi =0;yi<ymat.y;yi++)
       delete[] assoc->keepInd[yi];
@@ -520,7 +530,9 @@ void abcAsso::scoreAsso(funkyPars  *pars,assoStruct *assoc){
     // If we are performing the adjusted score test (either as a single site or as a burden), send
     // the complete dataset off for processing.
     else if(doAsso == 3 || doAsso == 4){
+      
       scores[yi]=doAdjustedAssociation(pars,y,keptInd,keepList,assoc);
+      
       // Compute the single-site test statistic, Tj = (Sj^2)/var(Sj), which is chi-squared with one degree. 
       // Add in an artificial direction for the association, to assist with analysis of results.
       for(int s=0;s<pars->numSites;s++){
@@ -1218,18 +1230,45 @@ void abcAsso::printDoAsso(funkyPars *pars){
   assoStruct *assoc= (assoStruct *) pars->extras[index];
   for(int yi=0;yi<ymat.y;yi++){
     bufstr.l=0;
+
+    // Add an extra information line to the start of the burden test results.
+    if(doAsso == 4){
+
+      // Generate a p-value for the burden test.
+      double p_value = 0;
+      double base = (pow(assoc->scores[yi][1][0].score,2)/assoc->scores[yi][1][0].variance);
+      for(int b=2;b<numBootstraps+2;b++){
+        double cast = assoc->scores[yi][b][0].score/sqrt(assoc->scores[yi][b][0].variance);
+        if(cast<0)
+          cast*=-1;
+        if(cast > base)
+          p_value++;
+      }
+      p_value /= numBootstraps;
+
+      // Write it to file.
+      ksprintf(&bufstr,"P-value for the complete burden test, after %d permutations: %f\n",numBootstraps,p_value);
+    }
+
+
     for(int s=0;s<pars->numSites;s++){
       if(pars->keepSites[s]==0){//will skip sites that have been removed      
 	continue;
      } 
-      if(doAsso==2){
+      if(doAsso>=2){
 	ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s]);
 
-      }else{
+      }
+      else{
 	ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->stat[yi][s]);
 
       }
     }
-    gzwrite(MultiOutfile[yi],bufstr.s,bufstr.l);
+    // gzwrite does not handle 0-sized writes very well (it messes up the checksum, and then the
+    // resulting file appears corrupted to gzip, zcat etc). If -sites is being used we may encounter
+    // an empty buffer: make sure none of these are passed to gzwrite.
+    if(bufstr.s != NULL){
+      gzwrite(MultiOutfile[yi],bufstr.s,bufstr.l);
+    }
   }
 }
