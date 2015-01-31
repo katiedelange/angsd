@@ -242,7 +242,7 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
 
   //print header
   for(int yi=0;yi<ymat.y;yi++){
-    if(doAsso==2)
+    if(doAsso>=2)
       gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tN\tLRT\thigh_WT/HE/HO\n");
     else
       gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tLRT\n");
@@ -1231,7 +1231,21 @@ void abcAsso::printDoAsso(funkyPars *pars){
   for(int yi=0;yi<ymat.y;yi++){
     bufstr.l=0;
 
-    // Add an extra information line to the start of the burden test results.
+    for(int s=0;s<pars->numSites;s++){
+      if(pars->keepSites[s]==0){//will skip sites that have been removed      
+	continue;
+     } 
+      if(doAsso>=2){
+	ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s]);
+
+      }
+      else{
+	ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->stat[yi][s]);
+
+      }
+    }
+
+    // Add an extra information line to the end of the burden test results.
     if(doAsso == 4){
 
       // Generate a p-value for the burden test.
@@ -1250,20 +1264,6 @@ void abcAsso::printDoAsso(funkyPars *pars){
       ksprintf(&bufstr,"P-value for the complete burden test, after %d permutations: %f\n",numBootstraps,p_value);
     }
 
-
-    for(int s=0;s<pars->numSites;s++){
-      if(pars->keepSites[s]==0){//will skip sites that have been removed      
-	continue;
-     } 
-      if(doAsso>=2){
-	ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s]);
-
-      }
-      else{
-	ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->stat[yi][s]);
-
-      }
-    }
     // gzwrite does not handle 0-sized writes very well (it messes up the checksum, and then the
     // resulting file appears corrupted to gzip, zcat etc). If -sites is being used we may encounter
     // an empty buffer: make sure none of these are passed to gzwrite.
