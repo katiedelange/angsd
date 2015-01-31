@@ -1,12 +1,18 @@
 #include "abc.h"
 
 typedef struct{
+  double score;
+  double variance;
+}scoreStruct;
+
+typedef struct{
 
   double **stat;
   int **keepInd;
   int *highHe;
   int *highWt;
   int *highHo;
+  scoreStruct ***scores;
 }assoStruct;
 
 
@@ -30,6 +36,7 @@ public:
   int minCount;
   int adjust;  //not for users
   int model;
+  int numBootstraps;
   void run(funkyPars  *pars);
   void print(funkyPars *pars);  
   void clean(funkyPars *pars);  
@@ -51,5 +58,8 @@ public:
   void getFitBin(double *res,double *Y,double *covMatrix,int nInd,int nEnv);
   double normScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
   double binomScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
+  scoreStruct **doAdjustedAssociation(funkyPars *pars, double *y, int keptInd, int *keepList, assoStruct *assoc);
+  double computeVariance(double *F, std::vector<std::vector<double> > expected_gt);
+  double computeVarianceCovarianceMatrix(double *F, std::vector<std::vector<std::vector<double> > > expected_gt);
   void printDoAsso(funkyPars *pars);
 };

@@ -26,6 +26,8 @@ void abcAsso::printArg(FILE *argFile){
   fprintf(argFile,"\t-doAsso\t%d\n",doAsso);
   fprintf(argFile,"\t1: Frequency Test (Known Major and Minor)\n");
   fprintf(argFile,"\t2: Score Test\n");
+  fprintf(argFile,"\t3: Adjusted Score Test\n");
+  fprintf(argFile,"\t4: Adjusted Score Burden Test\n");
   fprintf(argFile,"  Frequency Test Options:\n");
   fprintf(argFile,"\t-yBin\t\t%s\t(File containing disease status)\t\n\n",yfile);
   fprintf(argFile,"  Score Test Options:\n");
@@ -38,6 +40,7 @@ void abcAsso::printArg(FILE *argFile){
   fprintf(argFile,"\t1: Additive/Log-Additive (Default)\n");
   fprintf(argFile,"\t2: Dominant\n");
   fprintf(argFile,"\t3: Recessive\n\n");
+  fprintf(argFile,"\t-numBootstraps\t%d\t(The number of bootstrap samples to generate for burden testing)\n",numBootstraps);
   fprintf(argFile,"Examples:\n\tPerform Frequency Test\n\t  \'./angsd -yBin pheno.ybin -doAsso 1 -GL 1 -out out -doMajorMinor 1 -minLRT 24 -doMaf 2 -doSNP 1 -bam bam.filelist'\n");
   fprintf(argFile,"\tPerform Score Test\n\t  \'./angsd -yBin pheno.ybin -doAsso 2 -GL 1 -doPost 1 -out out -doMajorMinor 1 -minLRT 24 -doMaf 2 -doSNP 1 -bam bam.filelist'\n");
   fprintf(argFile,"\n");
@@ -69,6 +72,7 @@ void abcAsso::getOptions(argStruct *arguments){
   if(yfile!=NULL)
     isBinary=1;
   yfile=angsd::getArg("-yQuant",yfile,arguments);
+  numBootstraps=angsd::getArg("-numBootstraps",numBootstraps,arguments); 
 
   if(doPrint)
     fprintf(stderr,"finished [%s]\t[%s]\n",__FILE__,__FUNCTION__);
@@ -116,6 +120,7 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
   minCov=5;//not for users
   adjust=1;//not for users
   doMaf=0;
+  numBootstraps=0;
   //from command line
 
 
@@ -324,7 +329,7 @@ void abcAsso::run(funkyPars *pars){
   if(doAsso==1){
     frequencyAsso(pars,assoc);
   }
-  else if(doAsso==2){
+  else if(doAsso>=2){
     assoc->highWt=new int[pars->numSites];
     assoc->highHe=new int[pars->numSites];
     assoc->highHo=new int[pars->numSites];
@@ -452,56 +457,88 @@ void abcAsso::scoreAsso(funkyPars  *pars,assoStruct *assoc){
 
   int **keepInd  = new int*[ymat.y];
   double **stat = new double*[ymat.y];
+  scoreStruct ***scores = new scoreStruct**[ymat.y];
   for(int yi=0;yi<ymat.y;yi++){
     stat[yi] = new double[pars->numSites];
+    scores[yi] = new scoreStruct*[pars->numSites];
     keepInd[yi]= new int[pars->numSites];
   }
   
-  for(int s=0;s<pars->numSites;s++){//loop overs sites
-    if(pars->keepSites[s]==0)
-      continue;
-    
-    
-    int *keepListAll = new int[pars->nInd];
-    for(int i=0 ; i<pars->nInd ;i++){
-      keepListAll[i]=1;
+  // Pull out the already-calculated frequency information.
+  freqStruct *freq = (freqStruct *) pars->extras[6];
 
+  // Loop over each phenotype.
+  for(int yi=0;yi<ymat.y;yi++) { 
+
+    // Create a new phenotype status array, and then populate it 
+    // using information from the phenotypes file.
+    double *y = new double[pars->nInd];
+    for(int i=0 ; i<pars->nInd ;i++)
+      y[i]=ymat.matrix[i][yi]; 
+
+    // Determine which individuals will be kept for the given
+    // phenotype and covariates.
+    int *keepList = new int[pars->nInd];
+    int keptInd=0;
+    for(int i=0 ; i<pars->nInd ;i++) {
+      keepList[i]=1;
+      // If the phenotype is unknown, remove this individual.
+      if(ymat.matrix[i][yi]==-999)
+        keepList[i]=0;
+      // If we have any covariates supplied, check each in turn.
+      if(covfile!=NULL)
+        for(int ci=0;ci<covmat.y;ci++) {
+          // Any missing covariate information leads to the
+          // individual being excluded.
+          if(covmat.matrix[i][ci]==-999)
+            keepList[i]=0;
+        }
+      // If there were no grounds to exclude this individual,
+      // add one to the count of kept individuals for this
+      // site and phenotype.
+      if(keepList[i]==1)
+        keptInd++;
     }
 
-    for(int yi=0;yi<ymat.y;yi++) { //loop over phenotypes
-      int *keepList = new int[pars->nInd];
-      keepInd[yi][s]=0;
-      for(int i=0 ; i<pars->nInd ;i++) {
-	keepList[i]=1;
-	if(keepListAll[i]==0||ymat.matrix[i][yi]==-999)
-	  keepList[i]=0;
-	if(covfile!=NULL)
-	  for(int ci=0;ci<covmat.y;ci++) {
-	    if(covmat.matrix[i][ci]==-999)
-	      keepList[i]=0;
-	  }
+    // If we are performing the original score test, perform the association test site by site.
+    if(doAsso == 2){
+      for(int s=0;s<pars->numSites;s++){
+        
+        // If this site was previously filtered out, skip over it.
+        if(pars->keepSites[s]==0)
+          continue;
 
+        // Because we apparently care about storing this as a large array in memory, even though
+        // the value will be the same at every site. I assume it is used elsewhere in ANGSD,
+        // hence I keep it in the original format.
+        keepInd[yi][s] = keptInd;
 
-	if(keepList[i]==1)
-	  keepInd[yi][s]++;
-      }  
-      double *y = new double[pars->nInd];
-      for(int i=0 ; i<pars->nInd ;i++)
-	y[i]=ymat.matrix[i][yi]; 
- 
-      freqStruct *freq = (freqStruct *) pars->extras[6];
-      stat[yi][s]=doAssociation(pars,pars->post[s],y,keepInd[yi][s],keepList,freq->freq[s],s,assoc);
-      
-      //cleanup
-       delete [] y;
-      delete [] keepList;
+        // Do the actual association!
+        stat[yi][s]=doAssociation(pars,pars->post[s],y,keepInd[yi][s],keepList,freq->freq[s],s,assoc);
+      }
+    }
+    // If we are performing the adjusted score test (either as a single site or as a burden), send
+    // the complete dataset off for processing.
+    else if(doAsso == 3 || doAsso == 4){
+      scores[yi]=doAdjustedAssociation(pars,y,keptInd,keepList,assoc);
+      // Compute the single-site test statistic, Tj = (Sj^2)/var(Sj), which is chi-squared with one degree. 
+      // Add in an artificial direction for the association, to assist with analysis of results.
+      for(int s=0;s<pars->numSites;s++){
+        int direction = 1;
+        if(scores[yi][0][s].score < 0)
+          direction = -1;
+        stat[yi][s]=(pow(scores[yi][0][s].score,2)/scores[yi][0][s].variance)*direction;
+      }
+    }
 
-    } //phenotypes end
- 
-    delete [] keepListAll;
-  } // sites end
+    //cleanup 
+    delete [] y;
+    delete [] keepList;
+  }
 
+  // Save the results for printing.
   assoc->stat=stat;
+  assoc->scores=scores;
   assoc->keepInd=keepInd;
 }
 
@@ -1091,7 +1128,87 @@ double abcAsso::binomScoreEnv(double *post,int numInds, double *y, double *ytild
 
 
 
+// This method sets up the adjusted score test data, for both burden and single-site tests.
+// It takes in a set of genotype probabilities, calculates adjusted expected genotypes from
+// them, and performs bootstrap resampling when requested.
+// This method implements the Robust Variance Score statistic described by Derkach et al (2014)
+// DOI: 10.1093/bioinformatics/btu196, plus an additional AF estimate adjustment (unpublished).
+// Takes as input the posterior genotype probabilities (post), phenotypes (y), and MAF (freq),
+// and returns a score statistic (chi-squared, 1df) for the association between phenotype and 
+// observed data (through the unobserved genotype variable).
+scoreStruct** abcAsso::doAdjustedAssociation(funkyPars *pars, double *y, int keptInd, int *keepList, assoStruct *assoc){
 
+  // A matrix containing the scores and variances for each site, for the original sample
+  // plus each of the bootstrap samples. For the burden test include an additional
+  // list for the single site test results on the original sample.
+  scoreStruct **scores = new scoreStruct*[pars->numSites+(doAsso-2)];
+
+  // For each site j:
+    // Sum up the genotype probabilities to generate the expected genotype E(Gij|Dij)
+    // for each individual: E(Gij|Dij) = ∑gP(Gij=g|Dij), for g=0,1,2.
+
+    // Also compute a factor F(Gij|Dij) for use in determing the amount of information
+    // about the population allele frequency provided by the genotype probabilities:
+    // F(Gij|Dij) = ∑(g^2)P(Gij=g|Dij), for g=0,1,2.
+
+    // Use the two terms E(Gij|Dij) and F(Gij|Dij) to compute alpha, separately for cases
+    // and controls. Alpha describes the amount of missing allele frequency information in
+    // the data, and is expected to be larger for the lower coverage group (due to reduced
+    // sensitivity in low coverage data).
+
+    // Adjust every E(Gij|Dij) using the appropriate alpha value, to account for the missing
+    // allele frequency information.
+
+    // Set up the list of scores and variances for this site.
+    // scores[j]= new scoreStruct[numBootstraps+1];
+
+    // Compute the score Sj using the adjusted E(Gij|Dij) values. In the process, the E(Gij|Dij)
+    // values become centred around their means (calcualted separately for cases and controls).
+
+    // If doAsso == 3, also calculate the variance for each site.
+
+  // If doAsso == 4, calculate the variance-covariance matrix for the burden test using the
+  // E(Gij|Dij) values across all sites. Sum up all the scores.
+
+  // Generate numBootstrap bootstrap samples from the set of adjusted E(Gij|Dij), which are now
+  // centred around their means, and compute the scores and variances as necessary.
+
+  // Return a matrix of size num_sitesX(numBootstraps+1) for the single site test, or 
+  // num_sitesX(numBootstraps+1) for the burden test (so that an additional single site column
+  // for the unpermuted sample can be added). Each element of the matrix is a struct containing
+  // two values: the score and the variance. 
+  return scores;
+}
+
+// This method computes the variance of the adjusted score, using only a single site. It takes
+// as input a matrix of expected genotypes, split into cases and controls, and a factor F
+// describing the relative number of individuals in each group.
+double abcAsso::computeVariance(double *F, std::vector<std::vector<double> > expected_gt){
+
+  // Compute the variance of the score, var(Sj). It is also expected that the variance will be
+  // greater in the lower coverage group (as the genotypes are more uncertain in
+  // low coverage data), so the variance is computed separately for each group and
+  // the combined, to avoid underestimation.
+
+  return 0.0;
+}
+
+// This method takes expected genotypes from a number of sites, and computes the complete
+// variance-covariance matrix for those sites. It takes as input a matrix of expected genotypes, 
+// split into cases and controls, for a number of sites, and a factor F that describes the 
+// relative number of individuals in each group.
+// Please note that this is the processing bottleneck, as calculating covariances is
+// very computationally expensive. Therefore, this burden test should ideally only
+// be performed after first evaluating the aggregation of single site results to filter
+// out clearly insignificant burden regions.
+double abcAsso::computeVarianceCovarianceMatrix(double *F, std::vector<std::vector<std::vector<double> > > expected_gt){
+
+  // Compute the variance of the score, var(Sj), for each site, as well as the covariances between
+  // every pair of sites. This is done separately for cases and controls, and then combined into
+  // a final variance term.
+
+  return 0.0;
+}
 
 void abcAsso::printDoAsso(funkyPars *pars){
   if(doPrint)
