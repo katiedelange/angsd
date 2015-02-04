@@ -12,6 +12,8 @@ typedef struct{
   int *highHe;
   int *highWt;
   int *highHo;
+  double *afCase;
+  double *afCtrl;
   scoreStruct ***scores;
 }assoStruct;
 

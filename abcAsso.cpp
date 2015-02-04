@@ -243,8 +243,10 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
 
   //print header
   for(int yi=0;yi<ymat.y;yi++){
-    if(doAsso>=2)
+    if(doAsso==2)
       gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tN\tLRT\thigh_WT/HE/HO\n");
+    else if(doAsso>=3)
+      gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tN\tLRT\thigh_WT/HE/HO\tAF_case\tAF_ctrl\n");
     else
       gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tLRT\n");
   }
@@ -284,6 +286,8 @@ void abcAsso::clean(funkyPars *pars){
   delete[]  assoc->highWt;
   delete[]  assoc->highHe;
   delete[]  assoc->highHo;
+  delete[]  assoc->afCase;
+  delete[]  assoc->afCtrl;
 
   if(assoc->scores!=NULL){
     for(int yi=0;yi<ymat.y;yi++){
@@ -323,6 +327,8 @@ assoStruct *allocAssoStruct(){
   assoc->highWt = NULL;
   assoc->highHe = NULL;
   assoc->highHo = NULL;
+  assoc->afCase = NULL;
+  assoc->afCtrl = NULL;
   
   return assoc;
 }
@@ -344,6 +350,8 @@ void abcAsso::run(funkyPars *pars){
     assoc->highWt=new int[pars->numSites];
     assoc->highHe=new int[pars->numSites];
     assoc->highHo=new int[pars->numSites];
+    assoc->afCase=new double[pars->numSites];
+    assoc->afCtrl=new double[pars->numSites];
 
     scoreAsso(pars,assoc);
   }
@@ -1192,6 +1200,11 @@ scoreStruct** abcAsso::doAdjustedAssociation(funkyPars *pars, double *y, int *ke
     v_gj_dj.at(0).push_back(0.0);
     v_gj_dj.at(1).push_back(0.0);
 
+    // Keep track of the number of high confidence genotype probabilities in the sample, at each site.
+    int highWT=0;
+    int highHE=0;
+    int highHO=0;
+
     // Sum up the genotype probabilities to generate the expected genotype E(Gij|Dij)
     // for each individual: E(Gij|Dij) = ∑gP(Gij=g|Dij), for g=0,1,2.
     // Also compute the variance Var(Gij|Dij) for use in determing the amount of information
@@ -1202,8 +1215,21 @@ scoreStruct** abcAsso::doAdjustedAssociation(funkyPars *pars, double *y, int *ke
       if(keepList[i] == 1){
         e_gij_dij.at((int)y[i]).at(kept).push_back(pars->post[j][i*3+1]+2*pars->post[j][i*3+2]);
         v_gj_dj.at((int)y[i]).at(kept) += (pars->post[j][i*3+1]+4*pars->post[j][i*3+2]) - pow(pars->post[j][i*3+1]+2*pars->post[j][i*3+2],2);
+
+        // Track the number of high confidence genotypes.
+        if(pars->post[j][i*3+0]>0.9)
+          highWT++;
+        if(pars->post[j][i*3+1]>0.9)
+          highHE++;
+        if(pars->post[j][i*3+2]>0.9)
+          highHO++;
       }
     }
+
+    // Store the high confidence genotype counts.
+    assoc->highWt[j] = highWT;
+    assoc->highHe[j] = highHE;
+    assoc->highHo[j] = highHO;
 
     // Use the two terms E(Gij|Dij) and Var(Gij|Dij) to compute alpha, separately for cases
     // and controls. Alpha is essentially the IMPUTE2 info score, and it describes the amount
@@ -1218,6 +1244,12 @@ scoreStruct** abcAsso::doAdjustedAssociation(funkyPars *pars, double *y, int *ke
 
       // Compute the allele frequency estimate, ∑E(Gij|Dij)/2N.
       double af = std::accumulate(e_gij_dij.at(n).at(kept).begin(),e_gij_dij.at(n).at(kept).end(),0.0) / (2 * N);
+      
+      // Store the allele frequencies in the cases and controls for printing.
+      if(n==0)
+        assoc->afCtrl[j]=af;
+      else
+        assoc->afCase[j]=af;
 
       // This adjustment does not work if the allele frequency estimate is 0. Similarly,
       // for singletons there is no variance in the genotype probabiities, so a useful
@@ -1478,8 +1510,12 @@ void abcAsso::printDoAsso(funkyPars *pars){
       if(pars->keepSites[s]==0){//will skip sites that have been removed      
 	continue;
      } 
-      if(doAsso>=2){
+      if(doAsso==2){
 	ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s]);
+
+      }
+      else if(doAsso>=3){
+  ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s],assoc->afCase[s],assoc->afCtrl[s]);
 
       }
       else{
