@@ -58,8 +58,10 @@ public:
   void getFitBin(double *res,double *Y,double *covMatrix,int nInd,int nEnv);
   double normScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
   double binomScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
-  scoreStruct **doAdjustedAssociation(funkyPars *pars, double *y, int keptInd, int *keepList, assoStruct *assoc);
-  double computeVariance(double *F, std::vector<std::vector<double> > expected_gt);
-  double computeVarianceCovarianceMatrix(double *F, std::vector<std::vector<std::vector<double> > > expected_gt);
+  scoreStruct **doAdjustedAssociation(funkyPars *pars, double *phenotypes, int *keepList, assoStruct *assoc);
+  void computeScore(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, scoreStruct **&scores);
+  void computeVariance(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, scoreStruct **&scores);
+  void computeScoreSums(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, scoreStruct **&scores);
+  void computeVarianceCovarianceMatrix(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, scoreStruct **&scores);
   void printDoAsso(funkyPars *pars);
 };
