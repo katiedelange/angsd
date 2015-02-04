@@ -169,7 +169,10 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
   }
 
   //make output files
-  MultiOutfile = new gzFile[ymat.y];
+  int numOutfiles = ymat.y;
+  if(doAsso >=3 && numBootstraps != 0)
+    numOutfiles *= 3;
+  MultiOutfile = new gzFile[numOutfiles];
   const char* postfix;
   postfix=".lrt";
 
@@ -234,19 +237,37 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
   }
 
   //open outfiles
-  for(int i=0;i<ymat.y;i++){
+  for(int i=0;i<numOutfiles;i++){
+    int p=i;
+    if(i>=ymat.y){
+      postfix=".score";
+      if(i>=ymat.y*2)
+        postfix=".var";
+      p=i%ymat.y;
+    }
     char ary[5000];
-    snprintf(ary,5000,"%s%d.gz",postfix,i);
+    snprintf(ary,5000,"%s%d.gz",postfix,p);
     MultiOutfile[i] = Z_NULL;
     MultiOutfile[i] = aio::openFileGz(outfiles,ary,GZOPT);
   }
 
   //print header
-  for(int yi=0;yi<ymat.y;yi++){
+  for(int yi=0;yi<numOutfiles;yi++){
     if(doAsso==2)
       gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tN\tLRT\thigh_WT/HE/HO\n");
-    else if(doAsso>=3)
-      gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tN\tLRT\thigh_WT/HE/HO\tAF_case\tAF_ctrl\n");
+    else if(doAsso>=3){
+      if(yi < ymat.y){
+        gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tN\tLRT\thigh_WT/HE/HO\tAF_case\tAF_ctrl\n");
+      }
+      else{
+        if(doAsso==4)
+          gzprintf(MultiOutfile[yi],"sSingle\t");
+        for(int b=0;b<=numBootstraps;b++){
+          gzprintf(MultiOutfile[yi],"s%d\t",b);
+        }
+        gzprintf(MultiOutfile[yi],"\n");
+      }
+    }
     else
       gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tLRT\n");
   }
@@ -260,7 +281,11 @@ abcAsso::~abcAsso(){
 
   if(doAsso==0)
     return;
-  for(int i=0;i<ymat.y;i++)
+
+  int numOutfiles = ymat.y;
+  if(doAsso >=3 && numBootstraps != 0)
+    numOutfiles *= 3;
+  for(int i=0;i<numOutfiles;i++)
     if(MultiOutfile[i]) gzclose(MultiOutfile[i]);
   delete [] MultiOutfile;
 
@@ -1503,8 +1528,15 @@ void abcAsso::printDoAsso(funkyPars *pars){
 
   freqStruct *freq = (freqStruct *) pars->extras[6];
   assoStruct *assoc= (assoStruct *) pars->extras[index];
-  for(int yi=0;yi<ymat.y;yi++){
+
+  int numOutfiles = ymat.y;
+  if(doAsso >=3 && numBootstraps != 0)
+    numOutfiles *=3;
+
+  for(int yi=0;yi<numOutfiles;yi++){
     bufstr.l=0;
+
+    fprintf(stderr,"Printing %d\n",yi);
 
     for(int s=0;s<pars->numSites;s++){
       if(pars->keepSites[s]==0){//will skip sites that have been removed      
@@ -1515,8 +1547,21 @@ void abcAsso::printDoAsso(funkyPars *pars){
 
       }
       else if(doAsso>=3){
-  ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s],assoc->afCase[s],assoc->afCtrl[s]);
-
+        if(yi<ymat.y){
+          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s],assoc->afCase[s],assoc->afCtrl[s]);
+        }
+        else if(yi<ymat.y*2){
+          for(int b=0;b<numBootstraps+(doAsso-2);b++){
+            gzprintf(MultiOutfile[yi],"%f\t",assoc->scores[yi%ymat.y][s][b].score);
+          }
+          gzprintf(MultiOutfile[yi],"\n");  
+        }
+        else{
+          for(int b=0;b<numBootstraps+(doAsso-2);b++){
+            gzprintf(MultiOutfile[yi],"%f\t",assoc->scores[yi%ymat.y][s][b].variance);
+          }
+          gzprintf(MultiOutfile[yi],"\n"); 
+        }
       }
       else{
 	ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->stat[yi][s]);
@@ -1525,7 +1570,7 @@ void abcAsso::printDoAsso(funkyPars *pars){
     }
 
     // Add an extra information line to the end of the burden test results.
-    if(doAsso == 4){
+    if(doAsso == 4 && yi < ymat.y){
 
       // Generate a p-value for the burden test.
       double p_value = 0;
