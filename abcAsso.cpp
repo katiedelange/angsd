@@ -1551,7 +1551,7 @@ void abcAsso::printDoAsso(funkyPars *pars){
           ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s],assoc->afCase[s],assoc->afCtrl[s]);
         }
         else if(yi<ymat.y*2){
-          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s]);
+          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->afCase[s],assoc->afCtrl[s]);
           for(int b=0;b<numBootstraps+(doAsso-2);b++){
             if(s==0 || b == 0 || doAsso ==3)
               ksprintf(&bufstr,"%f\t",assoc->scores[yi%ymat.y][s][b].score);
@@ -1559,7 +1559,7 @@ void abcAsso::printDoAsso(funkyPars *pars){
           ksprintf(&bufstr,"\n");  
         }
         else{
-          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s]);
+          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->afCase[s],assoc->afCtrl[s]);
           for(int b=0;b<numBootstraps+(doAsso-2);b++){
             if(s==0 || b == 0 || doAsso ==3)
               ksprintf(&bufstr,"%f\t",assoc->scores[yi%ymat.y][s][b].variance);
