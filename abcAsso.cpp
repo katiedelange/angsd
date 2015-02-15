@@ -320,16 +320,6 @@ void abcAsso::clean(funkyPars *pars){
   delete[]  assoc->afCase;
   delete[]  assoc->afCtrl;
 
-  if(assoc->scores!=NULL){
-    for(int yi=0;yi<ymat.y;yi++){
-      for(int s=0;s<pars->numSites;s++){
-        delete[] assoc->scores[yi][s];
-      }
-      delete[] assoc->scores[yi];
-    }
-  }
-  delete[] assoc->scores;
-
   if(assoc->keepInd!=NULL)
     for( int yi =0;yi<ymat.y;yi++)
       delete[] assoc->keepInd[yi];
@@ -507,7 +497,8 @@ void abcAsso::scoreAsso(funkyPars  *pars,assoStruct *assoc){
 
   int **keepInd  = new int*[ymat.y];
   double **stat = new double*[ymat.y];
-  scoreStruct ***scores = new scoreStruct**[ymat.y];
+  std::vector<std::vector<std::vector<scoreStruct> > > scores (ymat.y, std::vector<std::vector<scoreStruct> >());
+
   for(int yi=0;yi<ymat.y;yi++){
     stat[yi] = new double[pars->numSites];
     keepInd[yi]= new int[pars->numSites];
@@ -1189,12 +1180,12 @@ double abcAsso::binomScoreEnv(double *post,int numInds, double *y, double *ytild
 // Takes as input the posterior genotype probabilities (post), phenotypes (y), and MAF (freq),
 // and returns a score statistic (chi-squared, 1df) for the association between phenotype and 
 // observed data (through the unobserved genotype variable).
-scoreStruct** abcAsso::doAdjustedAssociation(funkyPars *pars, double *y, int *keepList, assoStruct *assoc){
+std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars *pars, double *y, int *keepList, assoStruct *assoc){
 
   // A matrix containing the scores and variances for each site, for the original sample
   // plus each of the bootstrap samples. For the burden test include an additional
   // list for the single site test results on the original sample.
-  scoreStruct **scores = new scoreStruct*[pars->numSites];
+  std::vector<std::vector<scoreStruct> > scores (pars->numSites,std::vector<scoreStruct>(doAsso-2,scoreStruct()));
 
   // A matrix to store the expected genotypes E(Gij|Dij) for each individual, at each site, split 
   // into cases and controls.
@@ -1216,9 +1207,6 @@ scoreStruct** abcAsso::doAdjustedAssociation(funkyPars *pars, double *y, int *ke
 
   // For each site j:
   for(int j=0;j<pars->numSites;j++){
-
-    // Set up the list of scores and variances for this site.
-    scores[j]= new scoreStruct[numBootstraps+(doAsso-2)];
 
     // If this site was previously filtered out, skip over it.
     if(pars->keepSites[j]==0)
@@ -1383,6 +1371,14 @@ scoreStruct** abcAsso::doAdjustedAssociation(funkyPars *pars, double *y, int *ke
         }
       }
 
+      // Add a new sample scoreStruct to the list. This involves some unnecessary memory usage,
+      // and an unfortunate extra loop through the number of sites, because I need to create one
+      // for every site in order to fit in with the existing ANGSD structure - even though I don't
+      // end up calculating values for every position.
+      for(int j=0;j<pars->numSites;j++){
+        scores[j].push_back(scoreStruct());
+      }
+
       // Calculate the score and variance values (using the selected method).
       if(doAsso == 3){
         computeScore(perm,pos,alphaN,sample,scores);
@@ -1429,7 +1425,7 @@ scoreStruct** abcAsso::doAdjustedAssociation(funkyPars *pars, double *y, int *ke
 }
 
 // This method computes the score at all sites, using a matrix of expected genotypes.
-void abcAsso::computeScore(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, scoreStruct **&scores){
+void abcAsso::computeScore(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores){
 
   // Process each site separately.
   for(int j=0;j<e_gij_dij.at(0).size();j++){
@@ -1449,7 +1445,7 @@ void abcAsso::computeScore(int sample, int *pos, std::vector<std::vector<double>
 // This method computes the variance of the adjusted score, var(Sj) using only a single site. It takes
 // as input a matrix of expected genotypes, split into cases and controls, and a factor F
 // describing the relative number of individuals in each group. 
-void abcAsso::computeVariance(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, scoreStruct **&scores){
+void abcAsso::computeVariance(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores){
 
   // Loop through each site.
   for(int j=0;j<e_gij_dij.at(0).size();j++){
@@ -1476,7 +1472,7 @@ void abcAsso::computeVariance(int sample, int *pos, std::vector<std::vector<doub
 }
 
 // This method computes the sum of the scores at all sites, using a matrix of expected genotypes.
-void abcAsso::computeScoreSums(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, scoreStruct **&scores){
+void abcAsso::computeScoreSums(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores){
 
   // Get the scores for the single site statistics, removing any sites with no high-confidence variant calls in the process.
   double sum = 0.0;
@@ -1503,7 +1499,7 @@ void abcAsso::computeScoreSums(int sample, int *pos, std::vector<std::vector<dou
 // very computationally expensive. Therefore, this burden test should ideally only
 // be performed after first evaluating the aggregation of single site results to filter
 // out clearly insignificant burden regions.
-void abcAsso::computeVarianceCovarianceMatrix(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, scoreStruct **&scores){
+void abcAsso::computeVarianceCovarianceMatrix(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores){
 
   for(int j=0;j<e_gij_dij.at(0).size();j++){
     for(int n=0;n<=1;n++){

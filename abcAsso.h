@@ -14,7 +14,7 @@ typedef struct{
   int *highHo;
   double *afCase;
   double *afCtrl;
-  scoreStruct ***scores;
+  std::vector<std::vector<std::vector<scoreStruct> > > scores;
 }assoStruct;
 
 
@@ -61,10 +61,10 @@ public:
   void getFitBin(double *res,double *Y,double *covMatrix,int nInd,int nEnv);
   double normScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
   double binomScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
-  scoreStruct **doAdjustedAssociation(funkyPars *pars, double *phenotypes, int *keepList, assoStruct *assoc);
-  void computeScore(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, scoreStruct **&scores);
-  void computeVariance(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, scoreStruct **&scores);
-  void computeScoreSums(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, scoreStruct **&scores);
-  void computeVarianceCovarianceMatrix(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, scoreStruct **&scores);
+  std::vector<std::vector<scoreStruct> > doAdjustedAssociation(funkyPars *pars, double *phenotypes, int *keepList, assoStruct *assoc);
+  void computeScore(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
+  void computeVariance(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
+  void computeScoreSums(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
+  void computeVarianceCovarianceMatrix(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
   void printDoAsso(funkyPars *pars);
 };
