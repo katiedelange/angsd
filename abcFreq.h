@@ -39,6 +39,7 @@ private:
   int GL;
 
   double minMaf;
+  double maxMaf;
   double SNP_pval;
    int beagleProb;
 
