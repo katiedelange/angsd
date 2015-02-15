@@ -1346,7 +1346,7 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
     double base = std::abs(scores[0][1].score/sqrt(scores[0][1].variance));
 
     // Currently, 1000000 is the maximum number of permutations that will be carried out.
-    while(perm<1000000){
+    while(perm<=1000000){
 
       // Create a bootstrap sample by randomly permuting cases and controls (separately).
       std::vector<std::vector<std::vector<double> > > sample (2, std::vector<std::vector<double> >());
@@ -1582,15 +1582,15 @@ void abcAsso::printDoAsso(funkyPars *pars){
       // Generate a p-value for the burden test.
       double p_value = 0;
       double base = std::abs(assoc->scores[yi][0][1].score/sqrt(assoc->scores[yi][0][1].variance));
-      for(int b=2;b<numBootstraps+2;b++){
+      for(int b=2;b<assoc->scores[yi][0].size();b++){
         double cast = std::abs(assoc->scores[yi][0][b].score/sqrt(assoc->scores[yi][0][b].variance));
         if(cast > base)
           p_value++;
       }
-      p_value /= numBootstraps;
+      p_value /= (assoc->scores[yi][0].size()-2);
 
       // Write it to file.
-      ksprintf(&bufstr,"P-value for the complete burden test, after %d permutations: %f\n",numBootstraps,p_value);
+      ksprintf(&bufstr,"P-value for the complete burden test, after %d permutations: %f\n",(assoc->scores[yi][0].size()-2),p_value);
     }
 
     // gzwrite does not handle 0-sized writes very well (it messes up the checksum, and then the
