@@ -39,6 +39,7 @@ public:
   int adjust;  //not for users
   int model;
   int numBootstraps;
+  int numPermutations;
   void run(funkyPars  *pars);
   void print(funkyPars *pars);  
   void clean(funkyPars *pars);  

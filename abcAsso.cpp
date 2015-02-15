@@ -73,7 +73,11 @@ void abcAsso::getOptions(argStruct *arguments){
   if(yfile!=NULL)
     isBinary=1;
   yfile=angsd::getArg("-yQuant",yfile,arguments);
-  numBootstraps=angsd::getArg("-numBootstraps",numBootstraps,arguments); 
+  numBootstraps=angsd::getArg("-numBootstraps",numBootstraps,arguments);
+  numPermutations=numBootstraps;
+  if(numBootstraps == -1){
+    numBootstraps=1000000;
+  }
 
   if(doPrint)
     fprintf(stderr,"finished [%s]\t[%s]\n",__FILE__,__FUNCTION__);
@@ -514,6 +518,8 @@ void abcAsso::scoreAsso(funkyPars  *pars,assoStruct *assoc){
 
   // Loop over each phenotype.
   for(int yi=0;yi<ymat.y;yi++) { 
+
+    fprintf(stderr,"Processing phenotype %d\n",yi);
 
     // Create a new phenotype status array, and then populate it 
     // using information from the phenotypes file.
@@ -1322,7 +1328,7 @@ scoreStruct** abcAsso::doAdjustedAssociation(funkyPars *pars, double *y, int *ke
   // resampling. If a positive value is given using the flag -numBootstraps, repeat that
   // many times. If the value -1 is passed, resample using adaptive permutation.
   // 
-  if(numBootstraps > 0 || numBootstraps == -1){
+  if(numPermutations > 0 || numPermutations == -1){
 
     // Centre the E(Gij|Dij) values around their means (calculated separately for cases
     // and controls). This reduces the dimension of the difference between the groups
@@ -1388,7 +1394,7 @@ scoreStruct** abcAsso::doAdjustedAssociation(funkyPars *pars, double *y, int *ke
       }
 
       // If we are doing adaptive permutation, we'll need to keep an eye on the signficance.
-      if(numBootstraps  == -1){
+      if(numPermutations  == -1){
         
         // Increment the sig counter if it is > baseline.
         double cast = std::abs(scores[0][perm+1].score/sqrt(scores[0][perm+1].variance));
@@ -1398,8 +1404,10 @@ scoreStruct** abcAsso::doAdjustedAssociation(funkyPars *pars, double *y, int *ke
         // Periodically check the p-value, and exit if it is clearly not significant.
         if(perm==checkpoint){
           fprintf(stderr,"Perm: %d\tP-value: %f\n",perm,(sig*1.0/perm));
-          if(sig > 100)
+          if(sig > 100){
+            numBootstraps=perm;
             break;
+          }
           else
             checkpoint*=10;
         }
@@ -1411,7 +1419,6 @@ scoreStruct** abcAsso::doAdjustedAssociation(funkyPars *pars, double *y, int *ke
       // Increment the perm counter.
       perm++;
     }
-
   }
 
   // Return a matrix of size num_sitesX(numBootstraps+1) for the single site test, or 
