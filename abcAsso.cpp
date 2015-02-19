@@ -264,7 +264,7 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
         gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tN\tLRT\thigh_WT/HE/HO\tAF_case\tAF_ctrl\n");
       }
       else{
-        gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\t");
+        gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tAF_case\tAF_ctrl\t");
         if(doAsso==4){
           gzprintf(MultiOutfile[yi],"ss0\t");
         }
@@ -1252,6 +1252,15 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
     assoc->highHe[j] = highHE;
     assoc->highHo[j] = highHO;
 
+    // If this is unobserved, or a singleton, under this particular phenotype, remove it from the analysis.
+    if(highWT == (e_gij_dij.at(0).at(kept).size() + e_gij_dij.at(1).at(kept).size())){     
+      e_gij_dij.at(0).pop_back();
+      e_gij_dij.at(1).pop_back();
+      v_gj_dj.at(0).pop_back();
+      v_gj_dj.at(1).pop_back();
+      continue;
+    }
+
     // Use the two terms E(Gij|Dij) and Var(Gij|Dij) to compute alpha, separately for cases
     // and controls. Alpha is essentially the IMPUTE2 info score, and it describes the amount
     // of missing allele frequency information in the genotype probabilities, such that the
@@ -1290,6 +1299,18 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
       else{
         alphaN[n].push_back(N);
       }
+    }
+
+    // Check if either alpha adjustments are too low: if we have too little information in one of the
+    // groups, we can't fairly perform an association test using this site!
+    if((alphaN[0][kept]/e_gij_dij.at(0).at(kept).size())<0.75 || (alphaN[1][kept]/e_gij_dij.at(1).at(kept).size())<0.75){
+      alphaN.at(0).pop_back();
+      alphaN.at(1).pop_back();
+      e_gij_dij.at(0).pop_back();
+      e_gij_dij.at(1).pop_back();
+      v_gj_dj.at(0).pop_back();
+      v_gj_dj.at(1).pop_back();
+      continue;
     }
 
     // Store the variant this particular keepSite position actually refers to.
@@ -1542,9 +1563,8 @@ void abcAsso::printDoAsso(funkyPars *pars){
 
   for(int yi=0;yi<numOutfiles;yi++){
     bufstr.l=0;
-
     for(int s=0;s<pars->numSites;s++){
-      if(pars->keepSites[s]==0){//will skip sites that have been removed      
+      if(s != 0 && pars->keepSites[s]==0){//will skip sites that have been removed      
 	continue;
      } 
       if(doAsso==2){
@@ -1557,17 +1577,17 @@ void abcAsso::printDoAsso(funkyPars *pars){
         }
         else if(yi<ymat.y*2){
           ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->afCase[s],assoc->afCtrl[s]);
-          for(int b=0;b<numBootstraps+(doAsso-2);b++){
+          for(int b=0;b<assoc->scores[yi-ymat.y][0].size();b++){
             if(s==0 || b == 0 || doAsso ==3)
-              ksprintf(&bufstr,"%f\t",assoc->scores[yi%ymat.y][s][b].score);
+              ksprintf(&bufstr,"%f\t",assoc->scores[yi-ymat.y][s][b].score);
           }
           ksprintf(&bufstr,"\n");  
         }
         else{
           ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->afCase[s],assoc->afCtrl[s]);
-          for(int b=0;b<numBootstraps+(doAsso-2);b++){
+          for(int b=0;b<assoc->scores[yi-(2*ymat.y)][0].size();b++){
             if(s==0 || b == 0 || doAsso ==3)
-              ksprintf(&bufstr,"%f\t",assoc->scores[yi%ymat.y][s][b].variance);
+              ksprintf(&bufstr,"%f\t",assoc->scores[yi-(2*ymat.y)][s][b].variance);
           }
           ksprintf(&bufstr,"\n"); 
         }
@@ -1592,7 +1612,7 @@ void abcAsso::printDoAsso(funkyPars *pars){
       p_value /= (assoc->scores[yi][0].size()-2);
 
       // Write it to file.
-      ksprintf(&bufstr,"P-value for the complete burden test, after %d permutations: %f\n",(assoc->scores[yi][0].size()-2),p_value);
+      ksprintf(&bufstr,"P-value for the complete burden test, after %d permutations: %f\n",numBootstraps,p_value);
     }
 
     // gzwrite does not handle 0-sized writes very well (it messes up the checksum, and then the
