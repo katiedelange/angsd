@@ -1371,20 +1371,25 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
         }
       }
 
-      // Add a new sample scoreStruct to the list. This involves some unnecessary memory usage,
-      // and an unfortunate extra loop through the number of sites, because I need to create one
-      // for every site in order to fit in with the existing ANGSD structure - even though I don't
-      // end up calculating values for every position.
-      for(int j=0;j<pars->numSites;j++){
-        scores[j].push_back(scoreStruct());
-      }
-
       // Calculate the score and variance values (using the selected method).
       if(doAsso == 3){
+
+        // Add a new sample scoreStruct to the list. This involves some unnecessary memory usage,
+        // and an unfortunate extra loop through the number of sites, because I need to create one
+        // for every site in order to fit in with the existing ANGSD structure - even though I don't
+        // end up calculating values for every position.
+        for(int j=0;j<pars->numSites;j++){
+          scores[j].push_back(scoreStruct());
+        }
+
         computeScore(perm,pos,alphaN,sample,scores);
         computeVariance(perm,pos,alphaN,sample,scores);
       }
       else if(doAsso == 4){
+
+        // If we're doing burden testing, we just need a single new sample scoreStruct.
+        scores[0].push_back(scoreStruct());
+
         computeScoreSums(perm,pos,alphaN,sample,scores);
         computeVarianceCovarianceMatrix(perm,pos,alphaN,sample,scores);
       }
@@ -1485,9 +1490,6 @@ void abcAsso::computeScoreSums(int sample, int *pos, std::vector<std::vector<dou
     sum += (0-y_bar)*std::accumulate(e_gij_dij.at(0).at(j).begin(),e_gij_dij.at(0).at(j).end(),0.0) + (1-y_bar)*std::accumulate(e_gij_dij.at(1).at(j).begin(),e_gij_dij.at(1).at(j).end(),0.0);
   }
 
-  // NOTE: Currently this is unecessarily memory-intensive. It creates a full matrix of the same size as would be
-  // required to do single-site permutations, but only fills in the first row and first column. The code should be
-  // refactored so this doesn't happen!
   scores[0][sample+1].score = sum;
 }
 
