@@ -1303,7 +1303,7 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
 
     // Check if either alpha adjustments are too low: if we have too little information in one of the
     // groups, we can't fairly perform an association test using this site!
-    if((alphaN[0][kept]/e_gij_dij.at(0).at(kept).size())<0.75 || (alphaN[1][kept]/e_gij_dij.at(1).at(kept).size())<0.75){
+    if((alphaN[0][kept]/e_gij_dij.at(0).at(kept).size())<0.1 || (alphaN[1][kept]/e_gij_dij.at(1).at(kept).size())<0.1){
       alphaN.at(0).pop_back();
       alphaN.at(1).pop_back();
       e_gij_dij.at(0).pop_back();
