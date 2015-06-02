@@ -261,10 +261,10 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
       gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tN\tLRT\thigh_WT/HE/HO\n");
     else if(doAsso>=3){
       if(yi < ymat.y){
-        gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tN\tLRT\thigh_WT/HE/HO\tAF_case\tAF_ctrl\n");
+        gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tN\tLRT\thigh_WT/HE/HO\tAF_case\tAF_ctrl\tINFO_case\tINFO_ctrl\n");
       }
       else{
-        gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tAF_case\tAF_ctrl\t");
+        gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tAF_case\tAF_ctrl\tINFO_case\tINFO_ctrl\t");
         if(doAsso==4){
           gzprintf(MultiOutfile[yi],"ss0\t");
         }
@@ -350,6 +350,8 @@ assoStruct *allocAssoStruct(){
   assoc->highHo = NULL;
   assoc->afCase = NULL;
   assoc->afCtrl = NULL;
+  assoc->infoCase = NULL;
+  assoc->infoCtrl = NULL;
   
   return assoc;
 }
@@ -373,6 +375,8 @@ void abcAsso::run(funkyPars *pars){
     assoc->highHo=new int[pars->numSites];
     assoc->afCase=new double[pars->numSites];
     assoc->afCtrl=new double[pars->numSites];
+    assoc->infoCase=new double[pars->numSites];
+    assoc->infoCtrl=new double[pars->numSites];
 
     scoreAsso(pars,assoc);
   }
@@ -1234,16 +1238,23 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
     // Var(Gij=g|Dij) = E(Gij^2|Dij) - E(Gij|Dij)^2. Sum this up for all individuals, to give the term v_gj_dj.
     for(int i=0 ; i<pars->nInd ;i++){
       if(keepList[i] == 1){
-        e_gij_dij.at((int)y[i]).at(kept).push_back(pars->post[j][i*3+1]+2*pars->post[j][i*3+2]);
-        v_gj_dj.at((int)y[i]).at(kept) += (pars->post[j][i*3+1]+4*pars->post[j][i*3+2]) - pow(pars->post[j][i*3+1]+2*pars->post[j][i*3+2],2);
 
-        // Track the number of high confidence genotypes.
-        if(pars->post[j][i*3+0]>0.9)
-          highWT++;
-        if(pars->post[j][i*3+1]>0.9)
-          highHE++;
-        if(pars->post[j][i*3+2]>0.9)
-          highHO++;
+        // Some individuals can have missing data, represented by a genotype probability of
+        // 0 for all three possible genotypes. Don't include these individuals at this site.
+        if(pars->post[j][i*3] != 0 || pars->post[j][i*3+1] != 0 || pars->post[j][i*3+2] != 0){
+
+          // Update the expected genotype vectors.
+          e_gij_dij.at((int)y[i]).at(kept).push_back(pars->post[j][i*3+1]+2*pars->post[j][i*3+2]);
+          v_gj_dj.at((int)y[i]).at(kept) += (pars->post[j][i*3+1]+4*pars->post[j][i*3+2]) - pow(pars->post[j][i*3+1]+2*pars->post[j][i*3+2],2);
+
+          // Track the number of high confidence genotypes.
+          if(pars->post[j][i*3+0]>0.9)
+            highWT++;
+          if(pars->post[j][i*3+1]>0.9)
+            highHE++;
+          if(pars->post[j][i*3+2]>0.9)
+            highHO++;
+        }
       }
     }
 
@@ -1252,14 +1263,11 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
     assoc->highHe[j] = highHE;
     assoc->highHo[j] = highHO;
 
-    // If this is unobserved, or a singleton, under this particular phenotype, remove it from the analysis.
-    if(highWT == (e_gij_dij.at(0).at(kept).size() + e_gij_dij.at(1).at(kept).size())){     
-      e_gij_dij.at(0).pop_back();
-      e_gij_dij.at(1).pop_back();
-      v_gj_dj.at(0).pop_back();
-      v_gj_dj.at(1).pop_back();
-      continue;
-    }
+    // Get the full sample size at this site.
+    int N = e_gij_dij.at(0).at(kept).size()+e_gij_dij.at(1).at(kept).size();
+
+    // Compute the allele frequency estimate, ∑E(Gij|Dij)/2N, across both samples at this site.
+    double af = (std::accumulate(e_gij_dij.at(0).at(kept).begin(),e_gij_dij.at(0).at(kept).end(),0.0)+std::accumulate(e_gij_dij.at(1).at(kept).begin(),e_gij_dij.at(1).at(kept).end(),0.0)) / (2 * N);
 
     // Use the two terms E(Gij|Dij) and Var(Gij|Dij) to compute alpha, separately for cases
     // and controls. Alpha is essentially the IMPUTE2 info score, and it describes the amount
@@ -1268,49 +1276,26 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
     // sample of size aN. It is expected to be smaller for the lower coverage group (due to
     // reduced sensitivity in low coverage data): thus, do this separately for cases and controls.
     for(int n = 0; n <=1; n++){
-
-      // Get the full sample size.
-      int N = e_gij_dij.at(n).at(kept).size();
-
-      // Compute the allele frequency estimate, ∑E(Gij|Dij)/2N.
-      double af = std::accumulate(e_gij_dij.at(n).at(kept).begin(),e_gij_dij.at(n).at(kept).end(),0.0) / (2 * N);
       
-      // Store the allele frequencies in the cases and controls for printing.
-      if(n==0)
-        assoc->afCtrl[j]=af;
-      else
-        assoc->afCase[j]=af;
+      // The complete information, had we perfectly observed genotypes - 2N/(AF(1-AF)).
+      double complete_info = (2 * N) / (af*(1-af));
 
-      // This adjustment does not work if the allele frequency estimate is 0. Similarly,
-      // for singletons there is no variance in the genotype probabiities, so a useful
-      // alpha value will not be obtained.
-      if(af > (1.0/(2 * N))){
+      // The missing information, as we only have genotype probabilities - Var(Gij|Dij)/(AF^2((1-AF)^2)).
+      double missing_info = v_gj_dj.at(n).at(kept) / (pow(af,2)*pow(1-af,2));
 
-        // The complete information, had we perfectly observed genotypes - 2N/(AF(1-AF)).
-        double complete_info = (2 * N) / (af*(1-af));
+      // Alpha is the ratio of the observed information (complete - missing) to the complete information.
+      // This is multiplied by N (the original sample size) to give an adjusted sample size, aN.
+      alphaN[n].push_back(((complete_info - missing_info) / complete_info) * e_gij_dij.at(n).at(kept).size());
 
-        // The missing information, as we only have genotype probabilities - Var(Gij|Dij)/(AF^2((1-AF)^2)).
-        double missing_info = v_gj_dj.at(n).at(kept) / (pow(af,2)*pow(1-af,2));
-
-        // Alpha is the ratio of the observed information (complete - missing) to the complete information.
-        // This is multiplied by N (the original sample size) to give an adjusted sample size, aN.
-        alphaN[n].push_back(((complete_info - missing_info) / complete_info) * N);
+      // Store the allele frequencies and INFO scores in the cases and controls for printing.
+      if(n==0){          
+        assoc->afCtrl[j]=(std::accumulate(e_gij_dij.at(n).at(kept).begin(),e_gij_dij.at(n).at(kept).end(),0.0)/e_gij_dij.at(n).at(kept).size());
+        assoc->infoCtrl[j]=((complete_info - missing_info) / complete_info);
       }
       else{
-        alphaN[n].push_back(N);
+        assoc->afCase[j]=(std::accumulate(e_gij_dij.at(n).at(kept).begin(),e_gij_dij.at(n).at(kept).end(),0.0)/e_gij_dij.at(n).at(kept).size());
+        assoc->infoCase[j]=((complete_info - missing_info) / complete_info);       
       }
-    }
-
-    // Check if either alpha adjustments are too low: if we have too little information in one of the
-    // groups, we can't fairly perform an association test using this site!
-    if((alphaN[0][kept]/e_gij_dij.at(0).at(kept).size())<0.1 || (alphaN[1][kept]/e_gij_dij.at(1).at(kept).size())<0.1){
-      alphaN.at(0).pop_back();
-      alphaN.at(1).pop_back();
-      e_gij_dij.at(0).pop_back();
-      e_gij_dij.at(1).pop_back();
-      v_gj_dj.at(0).pop_back();
-      v_gj_dj.at(1).pop_back();
-      continue;
     }
 
     // Store the variant this particular keepSite position actually refers to.
@@ -1321,7 +1306,7 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
   }
 
   // Compute the score Sj using the adjusted E(Gij|Dij) values.
-  computeScore(0,pos,alphaN,e_gij_dij,scores);
+  computeScore(0,pos,e_gij_dij,scores);
 
   // Calculate the variance for each site.
   computeVariance(0,pos,alphaN,e_gij_dij,scores);
@@ -1329,7 +1314,7 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
   // If doAsso == 4, calculate the variance-covariance matrix for the burden test using the
   // E(Gij|Dij) values across all sites. Sum up all the scores.
   if(doAsso == 4){
-    computeScoreSums(0,pos,alphaN,e_gij_dij,scores);
+    computeScoreSums(0,pos,e_gij_dij,scores);
     computeVarianceCovarianceMatrix(0,pos,alphaN,e_gij_dij,scores);
   }
 
@@ -1344,11 +1329,11 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
     // to variance only, allowing for resampling to be performed separately within cases
     // and controls, rather than across phenotype labels (which is not possible if read
     // depth is perfectly correlated with phenotype).
-    // Note that we use the adjusted sample size to calculate the mean E(Gij|Dij) values.
+    // Note that we DO NOT use the adjusted sample size to calculate the mean E(Gij|Dij) values.
     for(int n=0;n<=1;n++){
       for(int j=0;j<e_gij_dij.at(0).size();j++){
         double sum = std::accumulate(e_gij_dij.at(n).at(j).begin(),e_gij_dij.at(n).at(j).end(),0.0);
-        double eg_bar = sum / alphaN[n][j];
+        double eg_bar = sum / e_gij_dij.at(n).at(j).size();
         std::transform(e_gij_dij.at(n).at(j).begin(),e_gij_dij.at(n).at(j).end(),e_gij_dij.at(n).at(j).begin(),std::bind2nd(std::minus<double>(),eg_bar));
       }
     }
@@ -1375,12 +1360,14 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
         // Loop through nCase (or nControl) number of times.
         for(int i=0;i<e_gij_dij.at(n).at(0).size();i++){
 
-            // Randomly select and individual (with replacement).
-            int x = rand() % e_gij_dij.at(n).at(0).size();
-
-            // Add the E(Gij|Dij) data for this individual (at all sites)
-            // to the sample set of expected genotypes.
+            // Add the E(Gij|Dij) data for a randomly selected individual to the sample set of
+            // expected genotypes for each site.
             for(int j=0;j<e_gij_dij.at(n).size();j++){
+
+              // Randomly select an individual (with replacement). Note that, because we now
+              // allow for missingness in the data, it is now impossible to ensure that the same
+              // set of permuted cases/controls will be applied at each site. 
+              int x = rand() % e_gij_dij.at(n).at(j).size();
 
               // If this is the first selected individual, we'll need to set up the lists.
               if(i==0){
@@ -1403,7 +1390,7 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
           scores[j].push_back(scoreStruct());
         }
 
-        computeScore(perm,pos,alphaN,sample,scores);
+        computeScore(perm,pos,sample,scores);
         computeVariance(perm,pos,alphaN,sample,scores);
       }
       else if(doAsso == 4){
@@ -1411,7 +1398,7 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
         // If we're doing burden testing, we just need a single new sample scoreStruct.
         scores[0].push_back(scoreStruct());
 
-        computeScoreSums(perm,pos,alphaN,sample,scores);
+        computeScoreSums(perm,pos,sample,scores);
         computeVarianceCovarianceMatrix(perm,pos,alphaN,sample,scores);
       }
 
@@ -1451,17 +1438,17 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
 }
 
 // This method computes the score at all sites, using a matrix of expected genotypes.
-void abcAsso::computeScore(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores){
+void abcAsso::computeScore(int sample, int *pos, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores){
 
   // Process each site separately.
   for(int j=0;j<e_gij_dij.at(0).size();j++){
 
-    // Compute the mean phenotype at this site using the adjusted sample sizes.
+    // Compute the mean phenotype at this site using the original sample sizes.
     // NOTE: Currently, it is a waste of processor time to compute this for every variant. Because
     // we do not exclude any individuals based on low MAX(genotype probability), this number will be
     // the same for every site, and every bootstrap permutation. However, we may wish to include some
     // filtering at a later stage, so this is left here to make updating the code simpler.
-    double y_bar = alphaN[1][j] / (alphaN[0][j] + alphaN[1][j] + 0.0);
+    double y_bar = e_gij_dij.at(1).at(j).size() / (e_gij_dij.at(0).at(j).size() + e_gij_dij.at(1).at(j).size() + 0.0);
 
     // Calculate the score, ∑(Yi-Ybar)E(Gij|Dij).
     scores[pos[j]][sample].score = (0-y_bar)*std::accumulate(e_gij_dij.at(0).at(j).begin(),e_gij_dij.at(0).at(j).end(),0.0) + (1-y_bar)*std::accumulate(e_gij_dij.at(1).at(j).begin(),e_gij_dij.at(1).at(j).end(),0.0);
@@ -1489,23 +1476,23 @@ void abcAsso::computeVariance(int sample, int *pos, std::vector<std::vector<doub
       // Subtract this mean expected genotype from the E(Gij|Dij) for each individual.
       std::transform(e_gij_dij.at(n).at(j).begin(),e_gij_dij.at(n).at(j).end(),e_gij_dij.at(n).at(j).begin(),std::bind2nd(std::minus<double>(),eg_bar));
 
-      // Add in the variance component (either cases or controls), using adjusted sample sizes.
+      // Add in the variance component (either cases or controls), using the original sample sizes.
       // var(Sj) = ∑(1-Y_bar)^2(Var_cases(E(Gij|Dij))) + ∑(Y_bar)^2(Var_controls(E(Gij|Dij))).
       double var = std::inner_product(e_gij_dij.at(n).at(j).begin(),e_gij_dij.at(n).at(j).end(),e_gij_dij.at(n).at(j).begin(),0.0);
-      scores[pos[j]][sample].variance += pow(alphaN[std::abs(n-1)][j]/(alphaN[0][j]+alphaN[1][j]),2) * var;
-    }
+      scores[pos[j]][sample].variance += pow(e_gij_dij.at(std::abs(n-1)).at(j).size()/(e_gij_dij.at(0).at(j).size() + e_gij_dij.at(1).at(j).size() + 0.0),2) * var;
+    }    
   }
 }
 
 // This method computes the sum of the scores at all sites, using a matrix of expected genotypes.
-void abcAsso::computeScoreSums(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores){
+void abcAsso::computeScoreSums(int sample, int *pos, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores){
 
   // Get the scores for the single site statistics, removing any sites with no high-confidence variant calls in the process.
   double sum = 0.0;
   for(int j=0;j<e_gij_dij.at(0).size();j++){
 
-    // Compute the mean phenotype at this site using the adjusted sample sizes.
-    double y_bar = alphaN[1][j] / (alphaN[0][j] + alphaN[1][j] + 0.0);
+    // Compute the mean phenotype at this site using the original sample sizes.
+    double y_bar = e_gij_dij.at(1).at(j).size() / (e_gij_dij.at(0).at(j).size() + e_gij_dij.at(1).at(j).size() + 0.0);
 
     // Calculate the score for this site, and add it to the sum.
     sum += (0-y_bar)*std::accumulate(e_gij_dij.at(0).at(j).begin(),e_gij_dij.at(0).at(j).end(),0.0) + (1-y_bar)*std::accumulate(e_gij_dij.at(1).at(j).begin(),e_gij_dij.at(1).at(j).end(),0.0);
@@ -1524,6 +1511,8 @@ void abcAsso::computeScoreSums(int sample, int *pos, std::vector<std::vector<dou
 // out clearly insignificant burden regions.
 void abcAsso::computeVarianceCovarianceMatrix(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores){
 
+
+  scores[0][sample+1].variance = 0.0;
   for(int j=0;j<e_gij_dij.at(0).size();j++){
     for(int n=0;n<=1;n++){
 
@@ -1537,10 +1526,10 @@ void abcAsso::computeVarianceCovarianceMatrix(int sample, int *pos, std::vector<
       // Update the covariance.
       for(int k=0;k<=j;k++){
 
-        // Add in the variance component (either cases or controls), using adjusted sample sizes.
+        // Add in the variance component (either cases or controls), using the original sample sizes.
         // var(Sj) = Ncase*(Nctrl/N)^2 * Vcase + Nctrl*(Ncase/N)^2 * Vctrl.
         double covar = std::inner_product(e_gij_dij.at(n).at(j).begin(),e_gij_dij.at(n).at(j).end(),e_gij_dij.at(n).at(k).begin(),0.0);
-        double y_factor = pow((alphaN[std::abs(n-1)][j]+alphaN[std::abs(n-1)][k])/(alphaN[0][j]+alphaN[1][j]+alphaN[0][k]+alphaN[1][k]),2);
+        double y_factor = pow((e_gij_dij.at(std::abs(n-1)).at(j).size()+e_gij_dij.at(std::abs(n-1)).at(k).size())/(e_gij_dij.at(0).at(j).size() + e_gij_dij.at(1).at(j).size() + e_gij_dij.at(0).at(k).size() + e_gij_dij.at(1).at(k).size() + 0.0),2);
 
         // If this is one of the covariances, add it twice. The variances (diagonals on the matrix)
         // are only included once.
@@ -1573,10 +1562,10 @@ void abcAsso::printDoAsso(funkyPars *pars){
       }
       else if(doAsso>=3){
         if(yi<ymat.y){
-          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s],assoc->afCase[s],assoc->afCtrl[s]);
+          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\t%f\t%f\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s],assoc->afCase[s],assoc->afCtrl[s],assoc->infoCase[s],assoc->infoCtrl[s]);
         }
         else if(yi<ymat.y*2){
-          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->afCase[s],assoc->afCtrl[s]);
+          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t%f\t%f\t",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->afCase[s],assoc->afCtrl[s],assoc->infoCase[s],assoc->infoCtrl[s]);
           for(int b=0;b<assoc->scores[yi-ymat.y][0].size();b++){
             if(s==0 || b == 0 || doAsso ==3)
               ksprintf(&bufstr,"%f\t",assoc->scores[yi-ymat.y][s][b].score);
@@ -1584,7 +1573,7 @@ void abcAsso::printDoAsso(funkyPars *pars){
           ksprintf(&bufstr,"\n");  
         }
         else{
-          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->afCase[s],assoc->afCtrl[s]);
+          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t%f\t%f\t",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->afCase[s],assoc->afCtrl[s],assoc->infoCase[s],assoc->infoCtrl[s]);
           for(int b=0;b<assoc->scores[yi-(2*ymat.y)][0].size();b++){
             if(s==0 || b == 0 || doAsso ==3)
               ksprintf(&bufstr,"%f\t",assoc->scores[yi-(2*ymat.y)][s][b].variance);
@@ -1603,13 +1592,17 @@ void abcAsso::printDoAsso(funkyPars *pars){
 
       // Generate a p-value for the burden test.
       double p_value = 0;
-      double base = std::abs(assoc->scores[yi][0][1].score/sqrt(assoc->scores[yi][0][1].variance));
+      double total_obs = 0;
+      double base = std::abs(pow(assoc->scores[yi][0][1].score,2)/assoc->scores[yi][0][1].variance);
+      
       for(int b=2;b<assoc->scores[yi][0].size();b++){
-        double cast = std::abs(assoc->scores[yi][0][b].score/sqrt(assoc->scores[yi][0][b].variance));
+        double cast = std::abs(pow(assoc->scores[yi][0][b].score,2)/
+        assoc->scores[yi][0][b].variance);
+        total_obs++;
         if(cast > base)
           p_value++;
       }
-      p_value /= (assoc->scores[yi][0].size()-2);
+      p_value /= total_obs;
 
       // Write it to file.
       ksprintf(&bufstr,"P-value for the complete burden test, after %d permutations: %f\n",numBootstraps,p_value);

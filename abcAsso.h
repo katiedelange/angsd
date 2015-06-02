@@ -14,6 +14,8 @@ typedef struct{
   int *highHo;
   double *afCase;
   double *afCtrl;
+  double *infoCase;
+  double *infoCtrl;
   std::vector<std::vector<std::vector<scoreStruct> > > scores;
 }assoStruct;
 
@@ -62,9 +64,9 @@ public:
   double normScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
   double binomScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
   std::vector<std::vector<scoreStruct> > doAdjustedAssociation(funkyPars *pars, double *phenotypes, int *keepList, assoStruct *assoc);
-  void computeScore(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
+  void computeScore(int sample, int *pos, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
   void computeVariance(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
-  void computeScoreSums(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
+  void computeScoreSums(int sample, int *pos, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
   void computeVarianceCovarianceMatrix(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
   void printDoAsso(funkyPars *pars);
 };
