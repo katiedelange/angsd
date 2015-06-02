@@ -503,12 +503,10 @@ void abcAsso::scoreAsso(funkyPars  *pars,assoStruct *assoc){
     exit(0);
   }
 
-
-  int **keepInd  = new int*[ymat.y];
   double **stat = new double*[ymat.y];
   std::vector<std::vector<std::vector<scoreStruct> > > scores (ymat.y, std::vector<std::vector<scoreStruct> >());
 
-
+  assoc->keepInd  = new int*[ymat.y];
   assoc->highWt=new int*[ymat.y];
   assoc->highHe=new int*[ymat.y];
   assoc->highHo=new int*[ymat.y];
@@ -520,7 +518,7 @@ void abcAsso::scoreAsso(funkyPars  *pars,assoStruct *assoc){
 
   for(int yi=0;yi<ymat.y;yi++){
     stat[yi] = new double[pars->numSites];
-    keepInd[yi]= new int[pars->numSites];
+    assoc->keepInd[yi]= new int[pars->numSites];
     assoc->highWt[yi]=new int[pars->numSites];
     assoc->highHe[yi]=new int[pars->numSites];
     assoc->highHo[yi]=new int[pars->numSites];
@@ -580,10 +578,10 @@ void abcAsso::scoreAsso(funkyPars  *pars,assoStruct *assoc){
         // Because we apparently care about storing this as a large array in memory, even though
         // the value will be the same at every site. I assume it is used elsewhere in ANGSD,
         // hence I keep it in the original format.
-        keepInd[yi][s] = keptInd;
+        assoc->keepInd[yi][s] = keptInd;
 
         // Do the actual association!
-        stat[yi][s]=doAssociation(pars,pars->post[s],y,keepInd[yi][s],keepList,freq->freq[s],s,assoc,yi);
+        stat[yi][s]=doAssociation(pars,pars->post[s],y,assoc->keepInd[yi][s],keepList,freq->freq[s],s,assoc,yi);
       }
     }
     // If we are performing the adjusted score test (either as a single site or as a burden), send
@@ -610,7 +608,6 @@ void abcAsso::scoreAsso(funkyPars  *pars,assoStruct *assoc){
   // Save the results for printing.
   assoc->stat=stat;
   assoc->scores=scores;
-  assoc->keepInd=keepInd;
 }
 
 
@@ -1288,6 +1285,7 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
 
     // Get the full sample size at this site.
     int N = e_gij_dij.at(0).at(kept).size()+e_gij_dij.at(1).at(kept).size();
+    assoc->keepInd[yi][j] = N;
 
     // Compute the allele frequency estimate, ∑E(Gij|Dij)/2N, across both samples at this site.
     double af = (std::accumulate(e_gij_dij.at(0).at(kept).begin(),e_gij_dij.at(0).at(kept).end(),0.0)+std::accumulate(e_gij_dij.at(1).at(kept).begin(),e_gij_dij.at(1).at(kept).end(),0.0)) / (2 * N);
