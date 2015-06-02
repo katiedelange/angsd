@@ -311,20 +311,33 @@ void abcAsso::clean(funkyPars *pars){
   if(assoc->stat!=NULL)
     for(int yi=0;yi<ymat.y;yi++)
       delete[] assoc->stat[yi];
-
   delete[] assoc->stat;
-  
+
+  if(assoc->keepInd!=NULL)
+    for(int yi=0;yi<ymat.y;yi++)
+      delete[] assoc->keepInd[yi];
+  delete[] assoc->keepInd;
+
+  if(assoc->highWt!=NULL){
+    for( int yi =0;yi<ymat.y;yi++){
+      delete[] assoc->highWt[yi];
+      delete[] assoc->highHe[yi];
+      delete[] assoc->highHo[yi];
+    }
+  }
   delete[]  assoc->highWt;
   delete[]  assoc->highHe;
   delete[]  assoc->highHo;
+
+  if(assoc->afCtrl!=NULL){
+    for( int yi =0;yi<ymat.y;yi++){
+      delete[] assoc->afCase[yi];
+      delete[] assoc->afCtrl[yi];
+    }
+  }
   delete[]  assoc->afCase;
   delete[]  assoc->afCtrl;
 
-  if(assoc->keepInd!=NULL)
-    for( int yi =0;yi<ymat.y;yi++)
-      delete[] assoc->keepInd[yi];
-  delete[] assoc->keepInd;
-  
   delete assoc;
 }
 
@@ -370,14 +383,6 @@ void abcAsso::run(funkyPars *pars){
     frequencyAsso(pars,assoc);
   }
   else if(doAsso>=2){
-    assoc->highWt=new int[pars->numSites];
-    assoc->highHe=new int[pars->numSites];
-    assoc->highHo=new int[pars->numSites];
-    assoc->afCase=new double[pars->numSites];
-    assoc->afCtrl=new double[pars->numSites];
-    assoc->infoCase=new double[pars->numSites];
-    assoc->infoCtrl=new double[pars->numSites];
-
     scoreAsso(pars,assoc);
   }
 
@@ -503,9 +508,27 @@ void abcAsso::scoreAsso(funkyPars  *pars,assoStruct *assoc){
   double **stat = new double*[ymat.y];
   std::vector<std::vector<std::vector<scoreStruct> > > scores (ymat.y, std::vector<std::vector<scoreStruct> >());
 
+
+  assoc->highWt=new int*[ymat.y];
+  assoc->highHe=new int*[ymat.y];
+  assoc->highHo=new int*[ymat.y];
+  assoc->afCase=new double*[ymat.y];
+  assoc->afCtrl=new double*[ymat.y];
+  assoc->infoCase=new double*[ymat.y];
+  assoc->infoCtrl=new double*[ymat.y];
+
+
   for(int yi=0;yi<ymat.y;yi++){
     stat[yi] = new double[pars->numSites];
     keepInd[yi]= new int[pars->numSites];
+    assoc->highWt[yi]=new int[pars->numSites];
+    assoc->highHe[yi]=new int[pars->numSites];
+    assoc->highHo[yi]=new int[pars->numSites];
+    assoc->afCase[yi]=new double[pars->numSites];
+    assoc->afCtrl[yi]=new double[pars->numSites];
+    assoc->infoCase[yi]=new double[pars->numSites];
+    assoc->infoCtrl[yi]=new double[pars->numSites];
+
   }
   
   // Pull out the already-calculated frequency information.
@@ -560,14 +583,14 @@ void abcAsso::scoreAsso(funkyPars  *pars,assoStruct *assoc){
         keepInd[yi][s] = keptInd;
 
         // Do the actual association!
-        stat[yi][s]=doAssociation(pars,pars->post[s],y,keepInd[yi][s],keepList,freq->freq[s],s,assoc);
+        stat[yi][s]=doAssociation(pars,pars->post[s],y,keepInd[yi][s],keepList,freq->freq[s],s,assoc,yi);
       }
     }
     // If we are performing the adjusted score test (either as a single site or as a burden), send
     // the complete dataset off for processing.
     else if(doAsso == 3 || doAsso == 4){
       
-      scores[yi]=doAdjustedAssociation(pars,y,keepList,assoc);
+      scores[yi]=doAdjustedAssociation(pars,y,keepList,assoc,yi);
       
       // Compute the single-site test statistic, Tj = (Sj^2)/var(Sj), which is chi-squared with one degree. 
       // Add in an artificial direction for the association, to assist with analysis of results.
@@ -774,7 +797,7 @@ void abcAsso::getFitBin(double *res,double *Y,double *covMatrix,int nInd,int nEn
 
 
 
-double abcAsso::doAssociation(funkyPars *pars,double *postOrg,double *yOrg,int keepInd,int *keepList,double freq,int s,assoStruct *assoc){
+double abcAsso::doAssociation(funkyPars *pars,double *postOrg,double *yOrg,int keepInd,int *keepList,double freq,int s,assoStruct *assoc,int yi){
   if(doPrint)
     fprintf(stderr,"Staring [%s]\t[%s]\n",__FILE__,__FUNCTION__);
 
@@ -896,9 +919,9 @@ double abcAsso::doAssociation(funkyPars *pars,double *postOrg,double *yOrg,int k
 
   double stat;
   if(isBinary)
-    stat = binomScoreEnv(post,keepInd,y,yfit,covMatrix,nEnv,freq,assoc,s);
+    stat = binomScoreEnv(post,keepInd,y,yfit,covMatrix,nEnv,freq,assoc,s,yi);
   else
-    stat = normScoreEnv(post,keepInd,y,yfit,covMatrix,nEnv,freq,assoc,s);
+    stat = normScoreEnv(post,keepInd,y,yfit,covMatrix,nEnv,freq,assoc,s,yi);
 
   delete[] yfit;
   return stat;
@@ -908,7 +931,7 @@ double abcAsso::doAssociation(funkyPars *pars,double *postOrg,double *yOrg,int k
 
 
 
-double abcAsso::normScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s){
+double abcAsso::normScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s,int yi){
   if(doPrint)
     fprintf(stderr,"staring [%s]\t[%s]\n",__FILE__,__FUNCTION__);
 
@@ -959,9 +982,9 @@ double abcAsso::normScoreEnv(double *post,int numInds, double *y, double *ytilde
       highHO++;
   }//recursion done
   
-  assoc->highWt[s] = highWT;
-  assoc->highHe[s] = highHE;
-  assoc->highHo[s] = highHO;
+  assoc->highWt[yi][s] = highWT;
+  assoc->highHe[yi][s] = highHE;
+  assoc->highHo[yi][s] = highHO;
   
   for(int i =0; i<numInds;i++)
     sumEx+=Ex[i];
@@ -1068,7 +1091,7 @@ double abcAsso::normScoreEnv(double *post,int numInds, double *y, double *ytilde
   
 
 
-double abcAsso::binomScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s){
+double abcAsso::binomScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s,int yi){
   if(doPrint)
     fprintf(stderr,"staring [%s]\t[%s]\n",__FILE__,__FUNCTION__);
 
@@ -1112,9 +1135,9 @@ double abcAsso::binomScoreEnv(double *post,int numInds, double *y, double *ytild
     if(post[i*3+2]>0.9)
       highHO++;
   }//recursion done
-  assoc->highWt[s] = highWT;
-  assoc->highHe[s] = highHE;
-  assoc->highHo[s] = highHO;
+  assoc->highWt[yi][s] = highWT;
+  assoc->highHe[yi][s] = highHE;
+  assoc->highHo[yi][s] = highHO;
  
 
     for(int i =0; i<numInds;i++)
@@ -1184,7 +1207,7 @@ double abcAsso::binomScoreEnv(double *post,int numInds, double *y, double *ytild
 // Takes as input the posterior genotype probabilities (post), phenotypes (y), and MAF (freq),
 // and returns a score statistic (chi-squared, 1df) for the association between phenotype and 
 // observed data (through the unobserved genotype variable).
-std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars *pars, double *y, int *keepList, assoStruct *assoc){
+std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars *pars, double *y, int *keepList, assoStruct *assoc, int yi){
 
   // A matrix containing the scores and variances for each site, for the original sample
   // plus each of the bootstrap samples. For the burden test include an additional
@@ -1259,9 +1282,9 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
     }
 
     // Store the high confidence genotype counts.
-    assoc->highWt[j] = highWT;
-    assoc->highHe[j] = highHE;
-    assoc->highHo[j] = highHO;
+    assoc->highWt[yi][j] = highWT;
+    assoc->highHe[yi][j] = highHE;
+    assoc->highHo[yi][j] = highHO;
 
     // Get the full sample size at this site.
     int N = e_gij_dij.at(0).at(kept).size()+e_gij_dij.at(1).at(kept).size();
@@ -1289,12 +1312,12 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
 
       // Store the allele frequencies and INFO scores in the cases and controls for printing.
       if(n==0){          
-        assoc->afCtrl[j]=(std::accumulate(e_gij_dij.at(n).at(kept).begin(),e_gij_dij.at(n).at(kept).end(),0.0)/e_gij_dij.at(n).at(kept).size());
-        assoc->infoCtrl[j]=((complete_info - missing_info) / complete_info);
+        assoc->afCtrl[yi][j]=(std::accumulate(e_gij_dij.at(n).at(kept).begin(),e_gij_dij.at(n).at(kept).end(),0.0)/e_gij_dij.at(n).at(kept).size());
+        assoc->infoCtrl[yi][j]=((complete_info - missing_info) / complete_info);
       }
       else{
-        assoc->afCase[j]=(std::accumulate(e_gij_dij.at(n).at(kept).begin(),e_gij_dij.at(n).at(kept).end(),0.0)/e_gij_dij.at(n).at(kept).size());
-        assoc->infoCase[j]=((complete_info - missing_info) / complete_info);       
+        assoc->afCase[yi][j]=(std::accumulate(e_gij_dij.at(n).at(kept).begin(),e_gij_dij.at(n).at(kept).end(),0.0)/e_gij_dij.at(n).at(kept).size());
+        assoc->infoCase[yi][j]=((complete_info - missing_info) / complete_info);       
       }
     }
 
@@ -1557,15 +1580,15 @@ void abcAsso::printDoAsso(funkyPars *pars){
 	continue;
      } 
       if(doAsso==2){
-	ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s]);
+	ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[yi][s],assoc->highHe[yi][s],assoc->highHo[yi][s]);
 
       }
       else if(doAsso>=3){
         if(yi<ymat.y){
-          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\t%f\t%f\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[s],assoc->highHe[s],assoc->highHo[s],assoc->afCase[s],assoc->afCtrl[s],assoc->infoCase[s],assoc->infoCtrl[s]);
+          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\t%f\t%f\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[yi][s],assoc->highHe[yi][s],assoc->highHo[yi][s],assoc->afCase[yi][s],assoc->afCtrl[yi][s],assoc->infoCase[yi][s],assoc->infoCtrl[yi][s]);
         }
         else if(yi<ymat.y*2){
-          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t%f\t%f\t",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->afCase[s],assoc->afCtrl[s],assoc->infoCase[s],assoc->infoCtrl[s]);
+          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t%f\t%f\t",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->afCase[yi-ymat.y][s],assoc->afCtrl[yi-ymat.y][s],assoc->infoCase[yi-ymat.y][s],assoc->infoCtrl[yi-ymat.y][s]);
           for(int b=0;b<assoc->scores[yi-ymat.y][0].size();b++){
             if(s==0 || b == 0 || doAsso ==3)
               ksprintf(&bufstr,"%f\t",assoc->scores[yi-ymat.y][s][b].score);
@@ -1573,7 +1596,7 @@ void abcAsso::printDoAsso(funkyPars *pars){
           ksprintf(&bufstr,"\n");  
         }
         else{
-          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t%f\t%f\t",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->afCase[s],assoc->afCtrl[s],assoc->infoCase[s],assoc->infoCtrl[s]);
+          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t%f\t%f\t",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->afCase[yi-(2*ymat.y)][s],assoc->afCtrl[yi-(2*ymat.y)][s],assoc->infoCase[yi-(2*ymat.y)][s],assoc->infoCtrl[yi-(2*ymat.y)][s]);
           for(int b=0;b<assoc->scores[yi-(2*ymat.y)][0].size();b++){
             if(s==0 || b == 0 || doAsso ==3)
               ksprintf(&bufstr,"%f\t",assoc->scores[yi-(2*ymat.y)][s][b].variance);

@@ -9,13 +9,13 @@ typedef struct{
 
   double **stat;
   int **keepInd;
-  int *highHe;
-  int *highWt;
-  int *highHo;
-  double *afCase;
-  double *afCtrl;
-  double *infoCase;
-  double *infoCtrl;
+  int **highHe;
+  int **highWt;
+  int **highHo;
+  double **afCase;
+  double **afCtrl;
+  double **infoCase;
+  double **infoCtrl;
   std::vector<std::vector<std::vector<scoreStruct> > > scores;
 }assoStruct;
 
@@ -58,12 +58,12 @@ public:
   angsd::Matrix<double> covmat;
   void scoreAsso(funkyPars  *pars,assoStruct *assoc);
   void frequencyAsso(funkyPars  *pars,assoStruct *assoc);
-  double doAssociation(funkyPars *pars,double *post,double *y,int keepInd,int *keepList,double freq,int s,assoStruct *assoc);
+  double doAssociation(funkyPars *pars,double *post,double *y,int keepInd,int *keepList,double freq,int s,assoStruct *assoc,int yi);
   void getFit(double *res,double *Y,double *covMatrix,int nInd,int nEnv);
   void getFitBin(double *res,double *Y,double *covMatrix,int nInd,int nEnv);
-  double normScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
-  double binomScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s);
-  std::vector<std::vector<scoreStruct> > doAdjustedAssociation(funkyPars *pars, double *phenotypes, int *keepList, assoStruct *assoc);
+  double normScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s,int yi);
+  double binomScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s,int yi);
+  std::vector<std::vector<scoreStruct> > doAdjustedAssociation(funkyPars *pars, double *phenotypes, int *keepList, assoStruct *assoc,int yi);
   void computeScore(int sample, int *pos, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
   void computeVariance(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
   void computeScoreSums(int sample, int *pos, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
