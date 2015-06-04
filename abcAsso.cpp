@@ -261,10 +261,10 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
       gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tN\tLRT\thigh_WT/HE/HO\n");
     else if(doAsso>=3){
       if(yi < ymat.y){
-        gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tN\tLRT\thigh_WT/HE/HO\tAF_case\tAF_ctrl\tINFO_case\tINFO_ctrl\n");
+        gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tPopulation_Frequency\tN\tLRT\thigh_WT/HE/HO\tAF_case\tAF_ctrl\tINFO_case\tINFO_ctrl\n");
       }
       else{
-        gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tAF_case\tAF_ctrl\tINFO_case\tINFO_ctrl\t");
+        gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tPopulation_Frequency\tAF_case\tAF_ctrl\tINFO_case\tINFO_ctrl\t");
         if(doAsso==4){
           gzprintf(MultiOutfile[yi],"ss0\t");
         }
@@ -1378,23 +1378,23 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
       // Create a bootstrap sample by randomly permuting cases and controls (separately).
       std::vector<std::vector<std::vector<double> > > sample (2, std::vector<std::vector<double> >());
       for(int n=0;n<=1;n++){
-        // Loop through nCase (or nControl) number of times.
-        for(int i=0;i<e_gij_dij.at(n).at(0).size();i++){
 
-            // Add the E(Gij|Dij) data for a randomly selected individual to the sample set of
-            // expected genotypes for each site.
-            for(int j=0;j<e_gij_dij.at(n).size();j++){
+        // Add the E(Gij|Dij) data for a randomly selected individual to the sample set of
+        // expected genotypes for each site.
+        for(int j=0;j<e_gij_dij.at(n).size();j++){
+
+          // Set up the lists for this site.
+          std::vector<double> newSite;
+          sample.at(n).push_back(newSite);
+
+          // Loop through nCase (or nControl) number of times.
+          for(int i=0;i<e_gij_dij.at(n).at(j).size();i++){
 
               // Randomly select an individual (with replacement). Note that, because we now
               // allow for missingness in the data, it is now impossible to ensure that the same
               // set of permuted cases/controls will be applied at each site. 
               int x = rand() % e_gij_dij.at(n).at(j).size();
 
-              // If this is the first selected individual, we'll need to set up the lists.
-              if(i==0){
-                std::vector<double> newSite;
-                sample.at(n).push_back(newSite);
-              }
               sample.at(n).at(j).push_back(e_gij_dij.at(n).at(j).at(x));
             }
         }
