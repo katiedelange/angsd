@@ -24,8 +24,6 @@
 #include "abcFreq.h"
 #include "abcAsso.h"
 
-
-
 void abcAsso::printArg(FILE *argFile){
   fprintf(argFile,"-------------\n%s:\n",__FILE__);
   fprintf(argFile,"\t-doAsso\t%d\n",doAsso);
@@ -136,7 +134,6 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
     }else
       return;
   }
-  
 
   getOptions(arguments);
   printArg(arguments->argumentFile);
@@ -353,6 +350,7 @@ void abcAsso::print(funkyPars *pars){
   printDoAsso(pars);
 }
 
+
 assoStruct *allocAssoStruct(){
   assoStruct *assoc = new assoStruct;
   
@@ -371,11 +369,10 @@ assoStruct *allocAssoStruct(){
 
 
 void abcAsso::run(funkyPars *pars){
-
-
+  
   if(doAsso==0)
     return;
-  
+
   assoStruct *assoc = allocAssoStruct();
   pars->extras[index] = assoc;
 
@@ -1219,6 +1216,10 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
   // and controls.
   std::vector<std::vector<double> > v_gj_dj (2, std::vector<double> ());
 
+  // A list of the number of individuals with missing data at each site, split into cases
+  // and controls.
+  std::vector<std::vector<std::vector<int> > > missing (2, std::vector<std::vector<int> > ());
+
   // A list of the alpha (IMPUTE2 info) scores x the number of samples, for each site.
   // This is calculated separately for cases and controls.
   std::vector<std::vector<double> > alphaN (2, std::vector<double> ());
@@ -1228,6 +1229,8 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
 
   // A position map to allow results to be saved back to the correct site.
   int *pos = new int[pars->numSites];
+
+  fprintf(stderr,"Preparing to process %d sites\n",pars->numSites);
 
   // For each site j:
   for(int j=0;j<pars->numSites;j++){
@@ -1245,6 +1248,10 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
     v_gj_dj.at(0).push_back(0.0);
     v_gj_dj.at(1).push_back(0.0);
 
+    // Initialise the missingness vectors to 0 for this site (for both cases and controls)
+    missing.at(0).push_back(std::vector<int> ());
+    missing.at(1).push_back(std::vector<int> ());
+
     // Keep track of the number of high confidence genotype probabilities in the sample, at each site.
     int highWT=0;
     int highHE=0;
@@ -1260,21 +1267,26 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
       if(keepList[i] == 1){
 
         // Some individuals can have missing data, represented by a genotype probability of
-        // 0 for all three possible genotypes. Don't include these individuals at this site.
-        if(pars->post[j][i*3] != 0 || pars->post[j][i*3+1] != 0 || pars->post[j][i*3+2] != 0){
-
-          // Update the expected genotype vectors.
-          e_gij_dij.at((int)y[i]).at(kept).push_back(pars->post[j][i*3+1]+2*pars->post[j][i*3+2]);
-          v_gj_dj.at((int)y[i]).at(kept) += (pars->post[j][i*3+1]+4*pars->post[j][i*3+2]) - pow(pars->post[j][i*3+1]+2*pars->post[j][i*3+2],2);
-
-          // Track the number of high confidence genotypes.
-          if(pars->post[j][i*3+0]>0.9)
-            highWT++;
-          if(pars->post[j][i*3+1]>0.9)
-            highHE++;
-          if(pars->post[j][i*3+2]>0.9)
-            highHO++;
+        // 0 for all three possible genotypes. Keep track of how many missing samples there are.
+        // Need to track the indices in terms of cases/controls, rather than the complete dataset.
+        // Adding the number of cases/controls in the e_gij_dij BEFORE adding the new datapoint
+        // will add the correct 0-based index for that individual.
+        if(pars->post[j][i*3] == 0 && pars->post[j][i*3+1] == 0 && pars->post[j][i*3+2] == 0){
+          missing.at((int)y[i]).at(kept).push_back(e_gij_dij.at((int)y[i]).at(kept).size());
         }
+
+        // Update the expected genotype vectors.
+        e_gij_dij.at((int)y[i]).at(kept).push_back(pars->post[j][i*3+1]+2*pars->post[j][i*3+2]);
+        v_gj_dj.at((int)y[i]).at(kept) += (pars->post[j][i*3+1]+4*pars->post[j][i*3+2]) - pow(pars->post[j][i*3+1]+2*pars->post[j][i*3+2],2);
+
+        // Track the number of high confidence genotypes.
+        if(pars->post[j][i*3+0]>0.9)
+          highWT++;
+        if(pars->post[j][i*3+1]>0.9)
+          highHE++;
+        if(pars->post[j][i*3+2]>0.9)
+          highHO++;
+      
       }
     }
 
@@ -1284,8 +1296,10 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
     assoc->highHo[yi][j] = highHO;
 
     // Get the full sample size at this site.
-    int N = e_gij_dij.at(0).at(kept).size()+e_gij_dij.at(1).at(kept).size();
+    int N = e_gij_dij.at(0).at(kept).size() - missing.at(0).at(kept).size() +e_gij_dij.at(1).at(kept).size() - missing.at(1).at(kept).size();
     assoc->keepInd[yi][j] = N;
+
+    //fprintf(stderr,"Site %d has %d individuals with data (%d missing cases, %d missing ctrls)\n",kept,N,int(missing.at(1).at(kept).size()),int(missing.at(0).at(kept).size()));
 
     // Compute the allele frequency estimate, ∑E(Gij|Dij)/2N, across both samples at this site.
     double af = (std::accumulate(e_gij_dij.at(0).at(kept).begin(),e_gij_dij.at(0).at(kept).end(),0.0)+std::accumulate(e_gij_dij.at(1).at(kept).begin(),e_gij_dij.at(1).at(kept).end(),0.0)) / (2 * N);
@@ -1306,15 +1320,15 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
 
       // Alpha is the ratio of the observed information (complete - missing) to the complete information.
       // This is multiplied by N (the original sample size) to give an adjusted sample size, aN.
-      alphaN[n].push_back(((complete_info - missing_info) / complete_info) * e_gij_dij.at(n).at(kept).size());
+      alphaN[n].push_back(((complete_info - missing_info) / complete_info) * (e_gij_dij.at(n).at(kept).size() - missing.at(n).at(kept).size()));
 
       // Store the allele frequencies and INFO scores in the cases and controls for printing.
       if(n==0){          
-        assoc->afCtrl[yi][j]=(std::accumulate(e_gij_dij.at(n).at(kept).begin(),e_gij_dij.at(n).at(kept).end(),0.0)/e_gij_dij.at(n).at(kept).size());
+        assoc->afCtrl[yi][j]=(std::accumulate(e_gij_dij.at(n).at(kept).begin(),e_gij_dij.at(n).at(kept).end(),0.0)/ (2 * (e_gij_dij.at(n).at(kept).size() - missing.at(n).at(kept).size())));
         assoc->infoCtrl[yi][j]=((complete_info - missing_info) / complete_info);
       }
       else{
-        assoc->afCase[yi][j]=(std::accumulate(e_gij_dij.at(n).at(kept).begin(),e_gij_dij.at(n).at(kept).end(),0.0)/e_gij_dij.at(n).at(kept).size());
+        assoc->afCase[yi][j]=(std::accumulate(e_gij_dij.at(n).at(kept).begin(),e_gij_dij.at(n).at(kept).end(),0.0)/(2 * (e_gij_dij.at(n).at(kept).size()- missing.at(n).at(kept).size())));
         assoc->infoCase[yi][j]=((complete_info - missing_info) / complete_info);       
       }
     }
@@ -1326,17 +1340,19 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
     kept++;
   }
 
+  fprintf(stderr,"%d sites remaining\n",kept);
+
   // Compute the score Sj using the adjusted E(Gij|Dij) values.
-  computeScore(0,pos,e_gij_dij,scores);
+  computeScore(0,pos,missing,e_gij_dij,scores);
 
   // Calculate the variance for each site.
-  computeVariance(0,pos,alphaN,e_gij_dij,scores);
+  computeVariance(0,pos,missing,alphaN,e_gij_dij,scores);
 
   // If doAsso == 4, calculate the variance-covariance matrix for the burden test using the
   // E(Gij|Dij) values across all sites. Sum up all the scores.
   if(doAsso == 4){
-    computeScoreSums(0,pos,e_gij_dij,scores);
-    computeVarianceCovarianceMatrix(0,pos,alphaN,e_gij_dij,scores);
+    computeScoreSums(0,pos,missing,e_gij_dij,scores);
+    computeVarianceCovarianceMatrix(0,pos,missing,alphaN,e_gij_dij,scores);
   }
 
   // Perform the requested number of bootstrap resampling steps: the default is to do no
@@ -1353,9 +1369,20 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
     // Note that we DO NOT use the adjusted sample size to calculate the mean E(Gij|Dij) values.
     for(int n=0;n<=1;n++){
       for(int j=0;j<e_gij_dij.at(0).size();j++){
-        double sum = std::accumulate(e_gij_dij.at(n).at(j).begin(),e_gij_dij.at(n).at(j).end(),0.0);
-        double eg_bar = sum / e_gij_dij.at(n).at(j).size();
+        double sum = std::accumulate(e_gij_dij.at(n).at(j).begin(),e_gij_dij.at(n).at(j).end(),0.0); 
+
+        double eg_bar = 0.0;
+        if((e_gij_dij.at(n).at(j).size() - missing.at(n).at(j).size()) > 0){    
+          eg_bar = sum / (e_gij_dij.at(n).at(j).size() - missing.at(n).at(j).size()); // alphaN[n][j];
+        }
+
+        // Subtract this mean expected genotype from the E(Gij|Dij) for each individual.
         std::transform(e_gij_dij.at(n).at(j).begin(),e_gij_dij.at(n).at(j).end(),e_gij_dij.at(n).at(j).begin(),std::bind2nd(std::minus<double>(),eg_bar));
+
+        // Set missing values back to 0 so they don't mess up the covariance calculations.
+        for(int m=0;m<missing.at(n).at(j).size();m++){
+          e_gij_dij.at(n).at(j).at(missing.at(n).at(j).at(m)) = 0.0;
+        }
       }
     }
 
@@ -1377,26 +1404,33 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
 
       // Create a bootstrap sample by randomly permuting cases and controls (separately).
       std::vector<std::vector<std::vector<double> > > sample (2, std::vector<std::vector<double> >());
+      std::vector<std::vector<std::vector<int> > > missingness_sample (2, std::vector<std::vector<int> >());
       for(int n=0;n<=1;n++){
 
-        // Add the E(Gij|Dij) data for a randomly selected individual to the sample set of
-        // expected genotypes for each site.
-        for(int j=0;j<e_gij_dij.at(n).size();j++){
+        // Loop through nCase (or nControl) number of times.
+        for(int i=0;i<e_gij_dij.at(n).at(0).size();i++){
 
-          // Set up the lists for this site.
-          std::vector<double> newSite;
-          sample.at(n).push_back(newSite);
+          // Randomly select an individual (with replacement). 
+          int x = rand() % e_gij_dij.at(n).at(0).size();
 
-          // Loop through nCase (or nControl) number of times.
-          for(int i=0;i<e_gij_dij.at(n).at(j).size();i++){
+          // Add the E(Gij|Dij) data for a randomly selected individual to the sample set of
+          // expected genotypes for each site.
+          for(int j=0;j<e_gij_dij.at(n).size();j++){
 
-              // Randomly select an individual (with replacement). Note that, because we now
-              // allow for missingness in the data, it is now impossible to ensure that the same
-              // set of permuted cases/controls will be applied at each site. 
-              int x = rand() % e_gij_dij.at(n).at(j).size();
-
-              sample.at(n).at(j).push_back(e_gij_dij.at(n).at(j).at(x));
+            if(i == 0){
+              // Set up the lists for this site.
+              std::vector<double> newSite;
+              sample.at(n).push_back(newSite);
+              missingness_sample.at(n).push_back(std::vector<int> ());
             }
+
+            sample.at(n).at(j).push_back(e_gij_dij.at(n).at(j).at(x));
+
+            // Keep track of how many missing sites there are.
+            if(std::find(missing.at(n).at(j).begin(), missing.at(n).at(j).end(), x) != missing.at(n).at(j).end()){
+               missingness_sample.at(n).at(j).push_back(x);
+            }
+          }
         }
       }
 
@@ -1411,16 +1445,18 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
           scores[j].push_back(scoreStruct());
         }
 
-        computeScore(perm,pos,sample,scores);
-        computeVariance(perm,pos,alphaN,sample,scores);
+        computeScore(perm,pos,missingness_sample,sample,scores);
+        computeVariance(perm,pos,missingness_sample,alphaN,sample,scores);
       }
       else if(doAsso == 4){
 
         // If we're doing burden testing, we just need a single new sample scoreStruct.
         scores[0].push_back(scoreStruct());
 
-        computeScoreSums(perm,pos,sample,scores);
-        computeVarianceCovarianceMatrix(perm,pos,alphaN,sample,scores);
+        computeScoreSums(perm,pos,missingness_sample,sample,scores);
+        computeVarianceCovarianceMatrix(perm,pos,missingness_sample,alphaN,sample,scores);
+
+        fprintf(stderr,"Perm: %d\n",perm);
       }
 
       // If we are doing adaptive permutation, we'll need to keep an eye on the signficance.
@@ -1459,27 +1495,42 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
 }
 
 // This method computes the score at all sites, using a matrix of expected genotypes.
-void abcAsso::computeScore(int sample, int *pos, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores){
+void abcAsso::computeScore(int sample, int *pos, std::vector<std::vector<std::vector<int> > > missing, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores){
 
   // Process each site separately.
   for(int j=0;j<e_gij_dij.at(0).size();j++){
 
+    // Get the number of individuals being processed at this site (the number of entries, minus
+    // those that are marked as missing data).
+    double ctrl_inds = e_gij_dij.at(0).at(j).size() - missing.at(0).at(j).size() + 0.0; 
+    double case_inds = e_gij_dij.at(1).at(j).size() - missing.at(1).at(j).size() + 0.0;   
+    double total_inds = ctrl_inds + case_inds + 0.0;
+
     // Compute the mean phenotype at this site using the original sample sizes.
-    // NOTE: Currently, it is a waste of processor time to compute this for every variant. Because
-    // we do not exclude any individuals based on low MAX(genotype probability), this number will be
-    // the same for every site, and every bootstrap permutation. However, we may wish to include some
-    // filtering at a later stage, so this is left here to make updating the code simpler.
-    double y_bar = e_gij_dij.at(1).at(j).size() / (e_gij_dij.at(0).at(j).size() + e_gij_dij.at(1).at(j).size() + 0.0);
+    double y_bar = 0.0;
+    if(total_inds != 0){
+      y_bar= case_inds / total_inds;
+    }
+
+    double case_total = 0.0;
+    if(case_inds != 0){
+      case_total=std::accumulate(e_gij_dij.at(1).at(j).begin(),e_gij_dij.at(1).at(j).end(),0.0);
+    }
+
+    double ctrl_total = 0.0;
+    if(ctrl_inds != 0){
+      ctrl_total=std::accumulate(e_gij_dij.at(0).at(j).begin(),e_gij_dij.at(0).at(j).end(),0.0);
+    }
 
     // Calculate the score, ∑(Yi-Ybar)E(Gij|Dij).
-    scores[pos[j]][sample].score = (0-y_bar)*std::accumulate(e_gij_dij.at(0).at(j).begin(),e_gij_dij.at(0).at(j).end(),0.0) + (1-y_bar)*std::accumulate(e_gij_dij.at(1).at(j).begin(),e_gij_dij.at(1).at(j).end(),0.0);
+    scores[pos[j]][sample].score = (0-y_bar)*ctrl_total + (1-y_bar)*case_total;
   }
 }
 
 // This method computes the variance of the adjusted score, var(Sj) using only a single site. It takes
 // as input a matrix of expected genotypes, split into cases and controls, and a factor F
 // describing the relative number of individuals in each group. 
-void abcAsso::computeVariance(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores){
+void abcAsso::computeVariance(int sample, int *pos, std::vector<std::vector<std::vector<int> > > missing, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores){
 
   // Loop through each site.
   for(int j=0;j<e_gij_dij.at(0).size();j++){
@@ -1490,35 +1541,76 @@ void abcAsso::computeVariance(int sample, int *pos, std::vector<std::vector<doub
     scores[pos[j]][sample].variance = 0.0;
     for(int n=0;n<=1;n++){
 
+      // Get the number of individuals we are dealing with here.
+      double num_inds = e_gij_dij.at(n).at(j).size() - missing.at(n).at(j).size() + 0.0;
+
       // Calculate the mean expected genotype at this site using the adjusted sample size.
-      double sum = std::accumulate(e_gij_dij.at(n).at(j).begin(),e_gij_dij.at(n).at(j).end(),0.0);      
-      double eg_bar = sum / alphaN[n][j];
+      double sum = std::accumulate(e_gij_dij.at(n).at(j).begin(),e_gij_dij.at(n).at(j).end(),0.0); 
+      double eg_bar = 0.0;
+      if(num_inds > 0){    
+        eg_bar = sum / num_inds; // alphaN[n][j];
+      }
 
       // Subtract this mean expected genotype from the E(Gij|Dij) for each individual.
       std::transform(e_gij_dij.at(n).at(j).begin(),e_gij_dij.at(n).at(j).end(),e_gij_dij.at(n).at(j).begin(),std::bind2nd(std::minus<double>(),eg_bar));
 
+      // Set missing values back to 0 so they don't mess up the covariance calculations.
+      for(int m=0;m<missing.at(n).at(j).size();m++){
+        e_gij_dij.at(n).at(j).at(missing.at(n).at(j).at(m)) = 0.0;
+      }
+
       // Add in the variance component (either cases or controls), using the original sample sizes.
       // var(Sj) = ∑(1-Y_bar)^2(Var_cases(E(Gij|Dij))) + ∑(Y_bar)^2(Var_controls(E(Gij|Dij))).
-      double var = std::inner_product(e_gij_dij.at(n).at(j).begin(),e_gij_dij.at(n).at(j).end(),e_gij_dij.at(n).at(j).begin(),0.0);
-      scores[pos[j]][sample].variance += pow(e_gij_dij.at(std::abs(n-1)).at(j).size()/(e_gij_dij.at(0).at(j).size() + e_gij_dij.at(1).at(j).size() + 0.0),2) * var;
+      double var = 0;
+      if(num_inds != 0){
+        var = std::inner_product(e_gij_dij.at(n).at(j).begin(),e_gij_dij.at(n).at(j).end(),e_gij_dij.at(n).at(j).begin(),0.0);
+      }
+
+      double y_factor = 0.0;
+      double total_inds = e_gij_dij.at(0).at(j).size()  - missing.at(0).at(j).size() + e_gij_dij.at(1).at(j).size()  - missing.at(1).at(j).size() + 0.0;
+      if(total_inds != 0){
+        y_factor = pow((e_gij_dij.at(std::abs(n-1)).at(j).size() - missing.at(std::abs(n-1)).at(j).size())/total_inds,2);
+      }
+      scores[pos[j]][sample].variance += y_factor * var;
     }    
   }
 }
 
 // This method computes the sum of the scores at all sites, using a matrix of expected genotypes.
-void abcAsso::computeScoreSums(int sample, int *pos, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores){
+void abcAsso::computeScoreSums(int sample, int *pos, std::vector<std::vector<std::vector<int> > > missing, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores){
 
   // Get the scores for the single site statistics, removing any sites with no high-confidence variant calls in the process.
   double sum = 0.0;
   for(int j=0;j<e_gij_dij.at(0).size();j++){
 
-    // Compute the mean phenotype at this site using the original sample sizes.
-    double y_bar = e_gij_dij.at(1).at(j).size() / (e_gij_dij.at(0).at(j).size() + e_gij_dij.at(1).at(j).size() + 0.0);
 
-    // Calculate the score for this site, and add it to the sum.
-    sum += (0-y_bar)*std::accumulate(e_gij_dij.at(0).at(j).begin(),e_gij_dij.at(0).at(j).end(),0.0) + (1-y_bar)*std::accumulate(e_gij_dij.at(1).at(j).begin(),e_gij_dij.at(1).at(j).end(),0.0);
+    // Get the number of individuals being processed at this site (the number of entries, minus
+    // those that are marked as missing data).
+    double ctrl_inds = e_gij_dij.at(0).at(j).size() - missing.at(0).at(j).size() + 0.0; 
+    double case_inds = e_gij_dij.at(1).at(j).size() - missing.at(1).at(j).size() + 0.0;   
+    double total_inds = ctrl_inds + case_inds + 0.0;
+
+    // Sum up the expected genotypes across cases and controls.
+    double case_total = 0.0;
+    if(case_inds != 0){
+      case_total=std::accumulate(e_gij_dij.at(1).at(j).begin(),e_gij_dij.at(1).at(j).end(),0.0);
+    }
+    double ctrl_total = 0.0;
+    if(ctrl_inds != 0){
+      ctrl_total=std::accumulate(e_gij_dij.at(0).at(j).begin(),e_gij_dij.at(0).at(j).end(),0.0);
+    }
+
+    // Compute the mean phenotype at this site using the original sample sizes.
+    double y_bar = 0.0;
+    if(total_inds != 0){
+      y_bar= case_inds / total_inds;
+    }
+
+    // Use this to compute the overall score at this site.
+    sum += (0-y_bar)*ctrl_total + (1-y_bar)*case_total;
   }
 
+  // Add this score to the storage matrix.
   scores[0][sample+1].score = sum;
 }
 
@@ -1530,27 +1622,48 @@ void abcAsso::computeScoreSums(int sample, int *pos, std::vector<std::vector<std
 // very computationally expensive. Therefore, this burden test should ideally only
 // be performed after first evaluating the aggregation of single site results to filter
 // out clearly insignificant burden regions.
-void abcAsso::computeVarianceCovarianceMatrix(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores){
-
+void abcAsso::computeVarianceCovarianceMatrix(int sample, int *pos, std::vector<std::vector<std::vector<int> > > missing, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores){
 
   scores[0][sample+1].variance = 0.0;
   for(int j=0;j<e_gij_dij.at(0).size();j++){
     for(int n=0;n<=1;n++){
 
+      // Get the number of individuals we are dealing with here.
+      double num_j_inds = e_gij_dij.at(n).at(j).size() - missing.at(n).at(j).size() + 0.0;
+
       // Calculate the mean expected genotype at this site using the adjusted sample size.
-      double sum = std::accumulate(e_gij_dij.at(n).at(j).begin(),e_gij_dij.at(n).at(j).end(),0.0);      
-      double eg_bar = sum / alphaN[n][j];
+      double sum = std::accumulate(e_gij_dij.at(n).at(j).begin(),e_gij_dij.at(n).at(j).end(),0.0); 
+      double eg_bar = 0.0;
+      if(num_j_inds > 0){    
+        eg_bar = sum / num_j_inds; // alphaN[n][j];
+      }
 
       // Subtract this mean expected genotype from the E(Gij|Dij) for each individual.
       std::transform(e_gij_dij.at(n).at(j).begin(),e_gij_dij.at(n).at(j).end(),e_gij_dij.at(n).at(j).begin(),std::bind2nd(std::minus<double>(),eg_bar));
 
+      // Set missing values back to 0 so they don't mess up the covariance calculations.
+      for(int m=0;m<missing.at(n).at(j).size();m++){
+        e_gij_dij.at(n).at(j).at(missing.at(n).at(j).at(m)) = 0.0;
+      }
+
       // Update the covariance.
       for(int k=0;k<=j;k++){
 
-        // Add in the variance component (either cases or controls), using the original sample sizes.
-        // var(Sj) = Ncase*(Nctrl/N)^2 * Vcase + Nctrl*(Ncase/N)^2 * Vctrl.
-        double covar = std::inner_product(e_gij_dij.at(n).at(j).begin(),e_gij_dij.at(n).at(j).end(),e_gij_dij.at(n).at(k).begin(),0.0);
-        double y_factor = pow((e_gij_dij.at(std::abs(n-1)).at(j).size()+e_gij_dij.at(std::abs(n-1)).at(k).size())/(e_gij_dij.at(0).at(j).size() + e_gij_dij.at(1).at(j).size() + e_gij_dij.at(0).at(k).size() + e_gij_dij.at(1).at(k).size() + 0.0),2);
+        // Get the number of individuals we are dealing with here (original sample sizes).
+        double num_k_inds = e_gij_dij.at(n).at(k).size() - missing.at(n).at(k).size() + 0.0;
+
+        // Compute the covariance between the sites j and k.
+        double covar = 0.0;
+        if(num_j_inds != 0 && num_k_inds != 0){
+          covar = std::inner_product(e_gij_dij.at(n).at(j).begin(),e_gij_dij.at(n).at(j).end(),e_gij_dij.at(n).at(k).begin(),0.0);
+        }
+
+        // Compute a y_factor adjustment to account for differing sample sizes.
+        double total_inds = e_gij_dij.at(0).at(j).size()  - missing.at(0).at(j).size() + e_gij_dij.at(1).at(j).size()  - missing.at(1).at(j).size() + e_gij_dij.at(0).at(k).size()  - missing.at(0).at(k).size() + e_gij_dij.at(1).at(k).size()  - missing.at(1).at(k).size() + 0.0;
+        double y_factor = 0.0;
+        if(total_inds != 0){
+          y_factor = pow((e_gij_dij.at(std::abs(n-1)).at(j).size()-missing.at(std::abs(n-1)).at(j).size()+e_gij_dij.at(std::abs(n-1)).at(k).size()-missing.at(std::abs(n-1)).at(k).size())/total_inds,2);
+        }
 
         // If this is one of the covariances, add it twice. The variances (diagonals on the matrix)
         // are only included once.

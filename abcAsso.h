@@ -64,9 +64,9 @@ public:
   double normScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s,int yi);
   double binomScoreEnv(double *post,int numInds, double *y, double *ytilde,double *cov,int nEnv,double freq,assoStruct *assoc,int s,int yi);
   std::vector<std::vector<scoreStruct> > doAdjustedAssociation(funkyPars *pars, double *phenotypes, int *keepList, assoStruct *assoc,int yi);
-  void computeScore(int sample, int *pos, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
-  void computeVariance(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
-  void computeScoreSums(int sample, int *pos, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
-  void computeVarianceCovarianceMatrix(int sample, int *pos, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
+  void computeScore(int sample, int *pos, std::vector<std::vector<std::vector<int> > > missing, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
+  void computeVariance(int sample, int *pos, std::vector<std::vector<std::vector<int> > > missing, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
+  void computeScoreSums(int sample, int *pos, std::vector<std::vector<std::vector<int> > > missing, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
+  void computeVarianceCovarianceMatrix(int sample, int *pos, std::vector<std::vector<std::vector<int> > > missing, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores);
   void printDoAsso(funkyPars *pars);
 };
