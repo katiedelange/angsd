@@ -44,6 +44,7 @@ void abcAsso::printArg(FILE *argFile){
   fprintf(argFile,"\t2: Dominant\n");
   fprintf(argFile,"\t3: Recessive\n\n");
   fprintf(argFile,"\t-numBootstraps\t%d\t(The number of bootstrap samples to generate for burden testing)\n",numBootstraps);
+  fprintf(argFile,"\t-burnin\t%d\t(The number of burn in permutations to perform before starting burden testing)\n",burnin);
   fprintf(argFile,"Examples:\n\tPerform Frequency Test\n\t  \'./angsd -yBin pheno.ybin -doAsso 1 -GL 1 -out out -doMajorMinor 1 -minLRT 24 -doMaf 2 -doSNP 1 -bam bam.filelist'\n");
   fprintf(argFile,"\tPerform Score Test\n\t  \'./angsd -yBin pheno.ybin -doAsso 2 -GL 1 -doPost 1 -out out -doMajorMinor 1 -minLRT 24 -doMaf 2 -doSNP 1 -bam bam.filelist'\n");
   fprintf(argFile,"\n");
@@ -72,6 +73,7 @@ void abcAsso::getOptions(argStruct *arguments){
     isBinary=1;
   yfile=angsd::getArg("-yQuant",yfile,arguments);
   numBootstraps=angsd::getArg("-numBootstraps",numBootstraps,arguments);
+  burnin=angsd::getArg("-burnin",burnin,arguments);
   numPermutations=numBootstraps;
   if(numBootstraps == -1){
     numBootstraps=1000000;
@@ -124,6 +126,7 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
   adjust=1;//not for users
   doMaf=0;
   numBootstraps=0;
+  burnin=0;
   //from command line
 
 
@@ -1390,17 +1393,30 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
     // correspond to an identical set of permuted cases/controls every time this is run.
     srand (42);
 
+    // If a burn-in period has been specified, increment the random number generator by
+    // the requested number of permutations.
+    for(int b=1;b<=burnin;b++){
+      // One iteration per case/control group
+      for(int n=0;n<=1;n++){
+        // Loop through nCase (or nControl) number of times.
+        for(int i=0;i<e_gij_dij.at(n).at(0).size();i++){
+          rand();
+        }
+      }
+    }
+
+
     // Generate numBootstrap bootstrap samples from the set of centred E(Gij|Dij), and
     // compute the scores and variances using the appropriate method (doAsso == 3 or 4).
     int perm = 1;
-    int checkpoint=1000;   
+    int checkpoint=10000;   
     
     // If we're doing adaptive permutation, we'll need to keep an eye on the significance.
     int sig = 0;
     double base = std::abs(scores[0][1].score/sqrt(scores[0][1].variance));
 
-    // Currently, 1000000 is the maximum number of permutations that will be carried out.
-    while(perm<=1000000){
+    // Currently, 100,000,000 is the maximum number of permutations that will be carried out.
+    while(perm<=100000000){
 
       // Create a bootstrap sample by randomly permuting cases and controls (separately).
       std::vector<std::vector<std::vector<double> > > sample (2, std::vector<std::vector<double> >());
@@ -1455,8 +1471,6 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
 
         computeScoreSums(perm,pos,missingness_sample,sample,scores);
         computeVarianceCovarianceMatrix(perm,pos,missingness_sample,alphaN,sample,scores);
-
-        fprintf(stderr,"Perm: %d\n",perm);
       }
 
       // If we are doing adaptive permutation, we'll need to keep an eye on the signficance.
@@ -1464,7 +1478,7 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
         
         // Increment the sig counter if it is > baseline.
         double cast = std::abs(scores[0][perm+1].score/sqrt(scores[0][perm+1].variance));
-        if(cast > base)
+        if(cast >= base)
           sig++;
 
         // Periodically check the p-value, and exit if it is clearly not significant.
@@ -1696,7 +1710,9 @@ void abcAsso::printDoAsso(funkyPars *pars){
       }
       else if(doAsso>=3){
         if(yi<ymat.y){
-          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\t%f\t%f\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[yi][s],assoc->highHe[yi][s],assoc->highHo[yi][s],assoc->afCase[yi][s],assoc->afCtrl[yi][s],assoc->infoCase[yi][s],assoc->infoCtrl[yi][s]);
+          if(pars->keepSites[s]!=0){
+            ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\t%f\t%f\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[yi][s],assoc->highHe[yi][s],assoc->highHo[yi][s],assoc->afCase[yi][s],assoc->afCtrl[yi][s],assoc->infoCase[yi][s],assoc->infoCtrl[yi][s]);
+          }
         }
         else if(yi<ymat.y*2){
           ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t%f\t%f\t",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->afCase[yi-ymat.y][s],assoc->afCtrl[yi-ymat.y][s],assoc->infoCase[yi-ymat.y][s],assoc->infoCtrl[yi-ymat.y][s]);
@@ -1733,7 +1749,7 @@ void abcAsso::printDoAsso(funkyPars *pars){
         double cast = std::abs(pow(assoc->scores[yi][0][b].score,2)/
         assoc->scores[yi][0][b].variance);
         total_obs++;
-        if(cast > base)
+        if(cast >= base)
           p_value++;
       }
       p_value /= total_obs;

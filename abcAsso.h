@@ -42,6 +42,7 @@ public:
   int model;
   int numBootstraps;
   int numPermutations;
+  int burnin;
   void run(funkyPars  *pars);
   void print(funkyPars *pars);  
   void clean(funkyPars *pars);  
