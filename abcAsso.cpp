@@ -258,13 +258,13 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
   //print header
   for(int yi=0;yi<numOutfiles;yi++){
     if(doAsso==2)
-      gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tFrequency\tN\tLRT\thigh_WT/HE/HO\n");
+      gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tRef\tAlt\tFrequency\tN\tLRT\thigh_WT/HE/HO\n");
     else if(doAsso>=3){
       if(yi < ymat.y){
-        gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tPopulation_Frequency\tN\tLRT\thigh_WT/HE/HO\tAF_case\tAF_ctrl\tINFO_case\tINFO_ctrl\n");
+        gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tRef\tAlt\tPopulation_Frequency\tN\tLRT\thigh_WT/HE/HO\tMAF_case\tMAF_ctrl\tINFO_case\tINFO_ctrl\n");
       }
       else{
-        gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tMajor\tMinor\tPopulation_Frequency\tAF_case\tAF_ctrl\tINFO_case\tINFO_ctrl\t");
+        gzprintf(MultiOutfile[yi],"Chromosome\tPosition\tRef\tAlt\tPopulation_Frequency\tMAF_case\tMAF_ctrl\tINFO_case\tINFO_ctrl\t");
         if(doAsso==4){
           gzprintf(MultiOutfile[yi],"ss0\t");
         }
@@ -1235,6 +1235,8 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
 
   fprintf(stderr,"Preparing to process %d sites\n",pars->numSites);
 
+  freqStruct *freq = (freqStruct *) pars->extras[6];
+
   // For each site j:
   for(int j=0;j<pars->numSites;j++){
 
@@ -1278,10 +1280,16 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
           missing.at((int)y[i]).at(kept).push_back(e_gij_dij.at((int)y[i]).at(kept).size());
         }
 
-        // Update the expected genotype vectors.
-        e_gij_dij.at((int)y[i]).at(kept).push_back(pars->post[j][i*3+1]+2*pars->post[j][i*3+2]);
-        v_gj_dj.at((int)y[i]).at(kept) += (pars->post[j][i*3+1]+4*pars->post[j][i*3+2]) - pow(pars->post[j][i*3+1]+2*pars->post[j][i*3+2],2);
-
+        // Update the expected genotype vectors. If the ref allele is actually the rare one,
+        // flip the genotypes
+        if(freq->freq[j] <= 0.5){
+          e_gij_dij.at((int)y[i]).at(kept).push_back(pars->post[j][i*3+1]+2*pars->post[j][i*3+2]);
+          v_gj_dj.at((int)y[i]).at(kept) += (pars->post[j][i*3+1]+4*pars->post[j][i*3+2]) - pow(pars->post[j][i*3+1]+2*pars->post[j][i*3+2],2);
+        }
+        else{
+          e_gij_dij.at((int)y[i]).at(kept).push_back(pars->post[j][i*3+1]+2*pars->post[j][i*3+0]);
+          v_gj_dj.at((int)y[i]).at(kept) += (pars->post[j][i*3+1]+4*pars->post[j][i*3+0]) - pow(pars->post[j][i*3+1]+2*pars->post[j][i*3+0],2);
+        }
         // Track the number of high confidence genotypes.
         if(pars->post[j][i*3+0]>0.9)
           highWT++;
@@ -1415,8 +1423,8 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
     int sig = 0;
     double base = std::abs(scores[0][1].score/sqrt(scores[0][1].variance));
 
-    // Currently, 100,000,000 is the maximum number of permutations that will be carried out.
-    while(perm<=100000000){
+    // Currently, 1,000,000 is the maximum number of permutations that will be carried out.
+    while(perm<=1000000){
 
       // Create a bootstrap sample by randomly permuting cases and controls (separately).
       std::vector<std::vector<std::vector<double> > > sample (2, std::vector<std::vector<double> >());
@@ -1704,6 +1712,7 @@ void abcAsso::printDoAsso(funkyPars *pars){
       if(s != 0 && pars->keepSites[s]==0){//will skip sites that have been removed      
 	continue;
      } 
+
       if(doAsso==2){
 	ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[yi][s],assoc->highHe[yi][s],assoc->highHo[yi][s]);
 

@@ -537,9 +537,9 @@ void abcFreq::run(funkyPars *pars) {
       else if(freq->freq[s] > 1 - minMaf)
 	pars->keepSites[s]=0;
 
-      if(freq->freq[s] > maxMaf)
+      if(freq->freq[s]<=0.5 && freq->freq[s] > maxMaf)
         pars->keepSites[s]=0;
-      else if((1-freq->freq[s])<freq->freq[s] && (1-freq->freq[s]) > maxMaf)
+      else if(freq->freq[s]>0.5 && (1-freq->freq[s]) > maxMaf)
         pars->keepSites[s]=0;
 
       if(doSNP&&(freq->lrt[s] < SNP_pval))
@@ -591,10 +591,14 @@ void abcFreq::postFreq(funkyPars  *pars,freqStruct *freq){
 
   for(int s=0;s<pars->numSites;s++){
     freq->freq[s]=0;
+    int N = 0;
     for(int i=0;i<pars->nInd;i++){
       freq->freq[s] += pars->post[s][i*3+1]+2*pars->post[s][i*3+2];
+      if(pars->post[s][i*3] != 0 || pars->post[s][i*3+1] != 0 || pars->post[s][i*3+2] != 0){
+        N++;
+      }
     }
-    freq->freq[s] = freq->freq[s]/(pars->nInd*2);
+    freq->freq[s] = freq->freq[s]/(N*2);
   }
 
 }
