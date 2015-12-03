@@ -16,6 +16,8 @@ typedef struct{
   double **afCtrl;
   double **infoCase;
   double **infoCtrl;
+  int **nCase;
+  int **nCtrl;
   std::vector<std::vector<std::vector<scoreStruct> > > scores;
 }assoStruct;
 
