@@ -1423,7 +1423,7 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
     // Generate numBootstrap bootstrap samples from the set of centred E(Gij|Dij), and
     // compute the scores and variances using the appropriate method (doAsso == 3 or 4).
     int perm = 1;
-    int checkpoint=10000;   
+    int checkpoint=100000;   
     
     // If we're doing adaptive permutation, we'll need to keep an eye on the significance.
     int sig = 0;
