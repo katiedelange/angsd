@@ -176,7 +176,7 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
   int numOutfiles = ymat.y;
   if(doAsso >=3 && numBootstraps != 0)
     numOutfiles *= 3;
-  multiOutfile = new gzFile[numOutfiles];
+  multiOutfile = new BGZF*[numOutfiles];
   const char* postfix;
   postfix=".lrt";
 
@@ -185,12 +185,12 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
     for(int i=0 ; i < ymat.x;i++) {
       keepList[i]=1;
       for(int yi=0;yi<ymat.y;yi++) {
-	if(ymat.matrix[i][yi]==-999)
-	  keepList[i]=0;
+  if(ymat.matrix[i][yi]==-999)
+    keepList[i]=0;
       }
       for(int ci=0;ci<covmat.y;ci++) {
-	if(covmat.matrix[i][ci]==-999)
-	  keepList[i]=0;
+  if(covmat.matrix[i][ci]==-999)
+    keepList[i]=0;
       }
     }
     int nCov=0;
@@ -198,18 +198,18 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
     for(int ci=0;ci<covmat.y;ci++) {
       count[ci]=0;
       for(int i=0 ; i < ymat.x;i++) {
-	if(keepList[i]==0)
-	  continue;
-	if(covmat.matrix[i][ci]!=0){
-	  count[ci]++;
-	}
+  if(keepList[i]==0)
+    continue;
+  if(covmat.matrix[i][ci]!=0){
+    count[ci]++;
+  }
       }
   
       if(count[ci]<minCov){
-	fprintf(stderr,"Error: Cov #%d only has %d non zero entries\n",ci,count[ci]);
+  fprintf(stderr,"Error: Cov #%d only has %d non zero entries\n",ci,count[ci]);
       }
       else
-	nCov++;
+  nCov++;
 
     }
     if(!dynCov&&covmat.y!=nCov){
@@ -225,14 +225,14 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
       newmat.y=nCov;
       newmat.matrix=new double*[covmat.x];
       for(int xi=0;xi<covmat.x;xi++){
-	newmat.matrix[xi] = new double[nCov];
-	int tempCount=0;
-	for(int ci=0;ci<covmat.y;ci++){
-	  if(count[ci]>minCov){
-	    newmat.matrix[xi][tempCount]=covmat.matrix[xi][ci];
-	    tempCount++;
-	  }
-	}
+  newmat.matrix[xi] = new double[nCov];
+  int tempCount=0;
+  for(int ci=0;ci<covmat.y;ci++){
+    if(count[ci]>minCov){
+      newmat.matrix[xi][tempCount]=covmat.matrix[xi][ci];
+      tempCount++;
+    }
+  }
       }
       angsd::deleteMatrix(covmat);
       covmat=newmat;
@@ -471,7 +471,7 @@ void abcAsso::frequencyAsso(funkyPars  *pars,assoStruct *assoc){
     if(doAsso==1){
 
       if(doPrint)
-	fprintf(stderr,"do freq [%s]\t[%s]\n",__FILE__,__FUNCTION__);
+  fprintf(stderr,"do freq [%s]\t[%s]\n",__FILE__,__FUNCTION__);
 
 
       double score0=abcFreq::likeFixedMinor(abcFreq::emFrequency_ext(like0[s],Ncontrols,NULL,Ncontrols),like0[s],Ncontrols);
@@ -654,7 +654,7 @@ void abcAsso::getFit(double *res,double *Y,double *covMatrix,int nInd,int nEnv){
   for(int x=0;x<nEnv;x++)//col X
     for(int y=0;y<nEnv;y++)//row Xt
       for(int i=0;i<nInd;i++)
-	XtX[x*nEnv+y]+=covMatrix[y*nInd+i]*covMatrix[x*nInd+i];
+  XtX[x*nEnv+y]+=covMatrix[y*nInd+i]*covMatrix[x*nInd+i];
 
   double workspace[2*nEnv];
   angsd::matinv(XtX, nEnv, nEnv, workspace);
@@ -688,15 +688,15 @@ void abcAsso::getFitBin(double *res,double *Y,double *covMatrix,int nInd,int nEn
     // R code
     getFitBin<-function(y,X){
         b<-rep(0,ncol(X))#estimates
-	for(i in 1:20){ 
-	    eta  <- as.vector(1/(1+exp(-(X%*%b))))
-	    change<-solve(t(X*eta*(1-eta)) %*% X ) %*% t(X) %*% ( y - eta )
-	    b<-b+ change
-	    if(sum(abs(change))<1e-6)
-	        break
-	    }
+  for(i in 1:20){ 
+      eta  <- as.vector(1/(1+exp(-(X%*%b))))
+      change<-solve(t(X*eta*(1-eta)) %*% X ) %*% t(X) %*% ( y - eta )
+      b<-b+ change
+      if(sum(abs(change))<1e-6)
+          break
+      }
 
-	b
+  b
     }
     ///////
     coef<-getFitBin(y,X)
@@ -734,7 +734,7 @@ void abcAsso::getFitBin(double *res,double *Y,double *covMatrix,int nInd,int nEn
     //eta <- 1/(1+exp(-(X%*%b)))
     for(int i=0;i<nInd;i++){
       for(int x=0;x<nEnv;x++)//col X
-      	eta[i]+=coef[x]*covMatrix[x*nInd+i];
+        eta[i]+=coef[x]*covMatrix[x*nInd+i];
       eta[i] = 1.0/(1+exp(-eta[i])); 
     }
 
@@ -744,13 +744,13 @@ void abcAsso::getFitBin(double *res,double *Y,double *covMatrix,int nInd,int nEn
     //get t(X) %*% ( y - eta )
     for(int x=0;x<nEnv;x++)//col X
       for(int i=0;i<nInd;i++)
-	Xt_y[x]+=covMatrix[x*nInd+i]*(Y[i]-eta[i]);
+  Xt_y[x]+=covMatrix[x*nInd+i]*(Y[i]-eta[i]);
 
     //get solve(t(X*eta*(1-eta)) %*% X )
     for(int x=0;x<nEnv;x++)//col X
       for(int y=0;y<nEnv;y++)//row Xt
-	for(int i=0;i<nInd;i++)
-	  XtX[x*nEnv+y]+=covMatrix[y*nInd+i] * eta[i] * covMatrix[x*nInd+i];
+  for(int i=0;i<nInd;i++)
+    XtX[x*nEnv+y]+=covMatrix[y*nInd+i] * eta[i] * covMatrix[x*nInd+i];
 
     double workspace[2*nEnv];
     //    angsd::matinv(XtX, nEnv, nEnv, workspace);
@@ -759,7 +759,7 @@ void abcAsso::getFitBin(double *res,double *Y,double *covMatrix,int nInd,int nEn
     //get (inv(t(X)%*%X))%*%(t(X)%*%y)
     for(int x=0;x<nEnv;x++)//col X
       for(int y=0;y<nEnv;y++)//row Xt
-	invXtX_Xt_y[x]+=XtX[y*nEnv+x]*Xt_y[y];
+  invXtX_Xt_y[x]+=XtX[y*nEnv+x]*Xt_y[y];
 
     double diff = 0;
     for(int x=0;x<nEnv;x++)
@@ -814,7 +814,7 @@ double abcAsso::doAssociation(funkyPars *pars,double *postOrg,double *yOrg,int k
     if(keepList[i]){
       y[count]=yOrg[i];
       for(int g=0;g<3;g++)
-	post[count*3+g]=postOrg[i*3+g];
+  post[count*3+g]=postOrg[i*3+g];
       count++;
     }
 
@@ -841,9 +841,9 @@ double abcAsso::doAssociation(funkyPars *pars,double *postOrg,double *yOrg,int k
     num=0;
     for(int j=0;j<covmat.x;j++){
       if(keepList[j]==0)
-	continue;
+  continue;
       for(int i=1;i<nEnv;i++)
-	covMatrix[i*keepInd+num]=covmat.matrix[j][i-1];   
+  covMatrix[i*keepInd+num]=covmat.matrix[j][i-1];   
       num++;
     }
   }
@@ -853,29 +853,29 @@ double abcAsso::doAssociation(funkyPars *pars,double *postOrg,double *yOrg,int k
   // permutation
   if(sitePerm){
     if((covmat.y+1)==1){
-      for(int i=0 ; i<keepInd ;i++){	
-	int j = rand() % (keepInd);
-	angsd::swapDouble(y[j],y[i]); 
+      for(int i=0 ; i<keepInd ;i++){  
+  int j = rand() % (keepInd);
+  angsd::swapDouble(y[j],y[i]); 
       }
     }
     else{
       int col0=0; 
       for(int i=0 ; i<covmat.x ;i++) {
-	if(keepList[i]==0)
-	  continue;
-	if(covmat.matrix[i][0]<0.5)
-	  col0++;
+  if(keepList[i]==0)
+    continue;
+  if(covmat.matrix[i][0]<0.5)
+    col0++;
       }
       for(int i=0 ; i<col0 ;i++) {
-	int j = rand() % (col0);
-	angsd::swapDouble(y[j],y[i]);
+  int j = rand() % (col0);
+  angsd::swapDouble(y[j],y[i]);
       }
       for(int i=0 ; i<keepInd-col0 ;i++) {
-	int j = rand() % (keepInd-col0);
-	angsd::swapDouble(y[j+col0],y[i+col0]);
+  int j = rand() % (keepInd-col0);
+  angsd::swapDouble(y[j+col0],y[i+col0]);
       }
       if(col0<500||keepInd-col0<500){
-	fprintf(stderr,"colTrouble %d %d\n",col0,keepInd-col0);
+  fprintf(stderr,"colTrouble %d %d\n",col0,keepInd-col0);
       }
     }
 
@@ -971,7 +971,7 @@ double abcAsso::normScoreEnv(double *post,int numInds, double *y, double *ytilde
     //Vaa<-Vaa+1/var*Xe[tal,]%*%t(Xe[tal,])
     for(int Nx=0;Nx<nEnv;Nx++)
       for(int Ny=0;Ny<nEnv;Ny++){
-	Vaa[Nx*nEnv+Ny]+= (1/var)*cov[Nx*numInds+i]*cov[Ny*numInds+i];
+  Vaa[Nx*nEnv+Ny]+= (1/var)*cov[Nx*numInds+i]*cov[Ny*numInds+i];
       }
     
     for(int x=0;x<nEnv;x++)
@@ -1069,7 +1069,7 @@ double abcAsso::normScoreEnv(double *post,int numInds, double *y, double *ytilde
     for(int i=0 ; i<numInds ;i++) {
       fprintf(stderr,"y: %f\t  yfit: %f \t post %f %f %f\tEx %f %f\tU %f cov: ",y[i],ytilde[i],post[i*3+0],post[i*3+1],post[i*3+2],Ex[i],Ex2[i],U);
       for(int j=0;j<nEnv;j++)
-	fprintf(stderr,"%f\t",cov[j*numInds+i]);
+  fprintf(stderr,"%f\t",cov[j*numInds+i]);
       fprintf(stderr,"\n");
  
     }
@@ -1125,7 +1125,7 @@ double abcAsso::binomScoreEnv(double *post,int numInds, double *y, double *ytild
   // Vaa<-Vaa+yTilde[i]*(1-yTilde[i])*A[i,]%*%t(A[i,])
     for(int Nx=0;Nx<nEnv;Nx++)
       for(int Ny=0;Ny<nEnv;Ny++){
-	Vaa[Nx*nEnv+Ny]+= ytilde[i]*(1-ytilde[i])*cov[Nx*numInds+i]*cov[Ny*numInds+i];
+  Vaa[Nx*nEnv+Ny]+= ytilde[i]*(1-ytilde[i])*cov[Nx*numInds+i]*cov[Ny*numInds+i];
       }
 
     for(int x=0;x<nEnv;x++)
@@ -1165,7 +1165,7 @@ double abcAsso::binomScoreEnv(double *post,int numInds, double *y, double *ytild
 
     for(int Nx=0;Nx<nEnv;Nx++)
       for(int Ny=0;Ny<nEnv;Ny++)
-	invVaa_Vab[Nx]+=Vaa[Nx*nEnv+Ny]*Vab[Ny];
+  invVaa_Vab[Nx]+=Vaa[Nx*nEnv+Ny]*Vab[Ny];
 
     for(int x=0;x<nEnv;x++)
       I+=Vab[x]*invVaa_Vab[x];
@@ -1191,7 +1191,7 @@ double abcAsso::binomScoreEnv(double *post,int numInds, double *y, double *ytild
 
     if((lrt>1000||I<-0.01||lrt<0)&&lrt!=-999&&lrt!=-99){//!std::isnan(lrt)){
       for(int i=0 ; i<numInds ;i++) {
-	fprintf(stderr,"y: %f\t  post %f %f %f\tEx %f %f\tU %f\n",y[i],post[i*3+0],post[i*3+1],post[i*3+2],Ex[i],Ex2[i],U);
+  fprintf(stderr,"y: %f\t  post %f %f %f\tEx %f %f\tU %f\n",y[i],post[i*3+0],post[i*3+1],post[i*3+2],Ex[i],Ex2[i],U);
       }
       exit(0);
     }
@@ -1720,21 +1720,21 @@ void abcAsso::printDoAsso(funkyPars *pars){
     bufstr.l=0;
     for(int s=0;s<pars->numSites;s++){
       if(s != 0 && pars->keepSites[s]==0){//will skip sites that have been removed      
-	     continue;
+       continue;
       } 
 
       if(doAsso==2){
-	     ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[yi][s],assoc->highHe[yi][s],assoc->highHo[yi][s]);
+       ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\n",header->target_name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[yi][s],assoc->highHe[yi][s],assoc->highHo[yi][s]);
 
       }
       else if(doAsso>=3){
         if(yi<ymat.y){
           if(pars->keepSites[s]!=0){
-            ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\t%f\t%f\t%f\t%f\t%d\t%d\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[yi][s],assoc->highHe[yi][s],assoc->highHo[yi][s],assoc->afCase[yi][s],assoc->afCtrl[yi][s],assoc->infoCase[yi][s],assoc->infoCtrl[yi][s],assoc->nCase[yi][s],assoc->nCtrl[yi][s]);
+            ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%d\t%f\t%d/%d/%d\t%f\t%f\t%f\t%f\t%d\t%d\n",header->target_name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->keepInd[yi][s],assoc->stat[yi][s],assoc->highWt[yi][s],assoc->highHe[yi][s],assoc->highHo[yi][s],assoc->afCase[yi][s],assoc->afCtrl[yi][s],assoc->infoCase[yi][s],assoc->infoCtrl[yi][s],assoc->nCase[yi][s],assoc->nCtrl[yi][s]);
           }
         }
         else if(yi<ymat.y*2){
-          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t%f\t%f\t%d\t%d\t",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->afCase[yi-ymat.y][s],assoc->afCtrl[yi-ymat.y][s],assoc->infoCase[yi-ymat.y][s],assoc->infoCtrl[yi-ymat.y][s],assoc->nCase[yi-ymat.y][s],assoc->nCtrl[yi-ymat.y][s]);
+          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t%f\t%f\t%d\t%d\t",header->target_name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->afCase[yi-ymat.y][s],assoc->afCtrl[yi-ymat.y][s],assoc->infoCase[yi-ymat.y][s],assoc->infoCtrl[yi-ymat.y][s],assoc->nCase[yi-ymat.y][s],assoc->nCtrl[yi-ymat.y][s]);
           for(int b=0;b<assoc->scores[yi-ymat.y][0].size();b++){
             if(s==0 || b == 0 || doAsso ==3)
               ksprintf(&bufstr,"%f\t",assoc->scores[yi-ymat.y][s][b].score);
@@ -1742,7 +1742,7 @@ void abcAsso::printDoAsso(funkyPars *pars){
           ksprintf(&bufstr,"\n");  
         }
         else{
-          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t%f\t%f\t%d\t%d\t",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->afCase[yi-(2*ymat.y)][s],assoc->afCtrl[yi-(2*ymat.y)][s],assoc->infoCase[yi-(2*ymat.y)][s],assoc->infoCtrl[yi-(2*ymat.y)][s],assoc->nCase[yi-(2*ymat.y)][s],assoc->nCtrl[yi-(2*ymat.y)][s]);
+          ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\t%f\t%f\t%f\t%d\t%d\t",header->target_name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->afCase[yi-(2*ymat.y)][s],assoc->afCtrl[yi-(2*ymat.y)][s],assoc->infoCase[yi-(2*ymat.y)][s],assoc->infoCtrl[yi-(2*ymat.y)][s],assoc->nCase[yi-(2*ymat.y)][s],assoc->nCtrl[yi-(2*ymat.y)][s]);
           for(int b=0;b<assoc->scores[yi-(2*ymat.y)][0].size();b++){
             if(s==0 || b == 0 || doAsso ==3)
               ksprintf(&bufstr,"%f\t",assoc->scores[yi-(2*ymat.y)][s][b].variance);
@@ -1751,7 +1751,7 @@ void abcAsso::printDoAsso(funkyPars *pars){
         }
       }
       else{
-	       ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\n",header->name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->stat[yi][s]);
+         ksprintf(&bufstr,"%s\t%d\t%c\t%c\t%f\t%f\n",header->target_name[pars->refId],pars->posi[s]+1,intToRef[pars->major[s]],intToRef[pars->minor[s]],freq->freq[s],assoc->stat[yi][s]);
 
       }
     }
