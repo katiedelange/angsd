@@ -1318,8 +1318,6 @@ std::vector<std::vector<scoreStruct> > abcAsso::doAdjustedAssociation(funkyPars 
     int N = e_gij_dij.at(0).at(kept).size() - missing.at(0).at(kept).size() +e_gij_dij.at(1).at(kept).size() - missing.at(1).at(kept).size();
     assoc->keepInd[yi][j] = N;
 
-    //fprintf(stderr,"Site %d has %d individuals with data (%d missing cases, %d missing ctrls)\n",kept,N,int(missing.at(1).at(kept).size()),int(missing.at(0).at(kept).size()));
-
     // Compute the allele frequency estimate, ∑E(Gij|Dij)/2N, across both samples at this site.
     double af = (std::accumulate(e_gij_dij.at(0).at(kept).begin(),e_gij_dij.at(0).at(kept).end(),0.0)+std::accumulate(e_gij_dij.at(1).at(kept).begin(),e_gij_dij.at(1).at(kept).end(),0.0)) / (2 * N);
 
@@ -1650,10 +1648,6 @@ void abcAsso::computeScoreSums(int sample, int *pos, std::vector<std::vector<std
 // variance-covariance matrix for those sites. It takes as input a matrix of expected genotypes, 
 // split into cases and controls, for a number of sites, and a factor F that describes the 
 // relative number of individuals in each group. 
-// Please note that this is the processing bottleneck, as calculating covariances is
-// very computationally expensive. Therefore, this burden test should ideally only
-// be performed after first evaluating the aggregation of single site results to filter
-// out clearly insignificant burden regions.
 void abcAsso::computeVarianceCovarianceMatrix(int sample, int *pos, std::vector<std::vector<std::vector<int> > > missing, std::vector<std::vector<double> > alphaN, std::vector<std::vector<std::vector<double> > > e_gij_dij, std::vector<std::vector<scoreStruct> > &scores){
 
   scores[0][sample+1].variance = 0.0;
