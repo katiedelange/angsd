@@ -24,6 +24,8 @@
 #include "abcFreq.h"
 #include "abcAsso.h"
 
+
+
 void abcAsso::printArg(FILE *argFile){
   fprintf(argFile,"-------------\n%s:\n",__FILE__);
   fprintf(argFile,"\t-doAsso\t%d\n",doAsso);
@@ -137,6 +139,7 @@ abcAsso::abcAsso(const char *outfiles,argStruct *arguments,int inputtype){
     }else
       return;
   }
+
 
   getOptions(arguments);
   printArg(arguments->argumentFile);
