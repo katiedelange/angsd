@@ -85,6 +85,7 @@ void abcFreq::printArg(FILE *argFile){
   fprintf(argFile,"\t4: Using reference panel as prior (still in development), requires a site file with chr pos major minor af ac an\n");
   fprintf(argFile,"Filters:\n");
   fprintf(argFile,"\t-minMaf  \t%f\t(Remove sites with MAF below)\n",minMaf);
+  fprintf(argFile,"\t-maxMaf  \t%f\t(Remove sites with MAF above)\n",maxMaf);
   fprintf(argFile,"\t-SNP_pval\t%f\t(Remove sites with a pvalue larger)\n",SNP_pval);
   fprintf(argFile,"\t-rmTriallelic\t%f\t(Remove sites with a pvalue lower)\n",rmTriallelic);
   fprintf(argFile,"Extras:\n");
@@ -147,6 +148,7 @@ void abcFreq::getOptions(argStruct *arguments){
 
   minMaf=angsd::getArg("-minMaf",minMaf,arguments);
   //  assert(minMaf<=1&&minMaf>=0);
+  maxMaf=angsd::getArg("-maxMaf",maxMaf,arguments);
 
   double tmp=-1;
   tmp=angsd::getArg("-SNP_pval",tmp,arguments);
@@ -192,6 +194,10 @@ void abcFreq::getOptions(argStruct *arguments){
   }
   if(rmTriallelic>0.0 &&(abs(doMaf)!=1)){
     fprintf(stderr,"\n rmTriallelic only works with -doMaf 1 \n\n");
+    exit(0);
+  }
+  if(maxMaf>0.0 &&(abs(doMaf)==0)){
+    fprintf(stderr,"\nYou've selected maxMaf but no MAF estimator, choose -doMaf\n\n");
     exit(0);
   }
 
@@ -254,6 +260,7 @@ abcFreq::abcFreq(const char *outfiles,argStruct *arguments,int inputtype){
   inputIsBeagle =0;
   beagleProb = 0; //<-output for beagleprobs
   minMaf =-1.0;
+  maxMaf = 1.0;  
   SNP_pval = 1;
   nInd = arguments->nInd;
   eps = 0.001;
@@ -556,13 +563,18 @@ void abcFreq::run(funkyPars *pars) {
 	pars->keepSites[s]=0;
       else if(freq->freq[s] > 1 - minMaf)
 	pars->keepSites[s]=0;
-     
-      if(doSNP && (freq->lrt[s] < SNP_pval))
+
+      if(freq->freq[s]<=0.5 && freq->freq[s] > maxMaf)
+        pars->keepSites[s]=0;
+      else if(freq->freq[s]>0.5 && (1-freq->freq[s]) > maxMaf)
+        pars->keepSites[s]=0;
+
+      if(doSNP&&(freq->lrt[s] < SNP_pval))
       	pars->keepSites[s]=0;
       if(rmTriallelic && (freq->lrt_tri[s] > SNP_pval_tri))
       	pars->keepSites[s]=0;
       if(minInd>0&&pars->keepSites[s]<minInd)
-	pars->keepSites[s] = 0;
+	      pars->keepSites[s] = 0;
     }
   }
   if(doPost) {
@@ -633,10 +645,14 @@ void abcFreq::postFreq(funkyPars  *pars,freqStruct *freq){
 
   for(int s=0;s<pars->numSites;s++){
     freq->freq[s]=0;
+    int N = 0;
     for(int i=0;i<pars->nInd;i++){
       freq->freq[s] += pars->post[s][i*3+1]+2*pars->post[s][i*3+2];
+      if(pars->post[s][i*3] != 0 || pars->post[s][i*3+1] != 0 || pars->post[s][i*3+2] != 0){
+        N++;
+      }
     }
-    freq->freq[s] = freq->freq[s]/(pars->nInd*2);
+    freq->freq[s] = freq->freq[s]/(N*2);
   }
 
 }
